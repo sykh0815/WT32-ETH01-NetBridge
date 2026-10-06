@@ -12,6 +12,7 @@
 #include <dhcpserver/dhcpserver.h>
 #include <freertos/queue.h>
 #include <esp_system.h>
+#include "oui_table.h"
 
 // Zwei Betriebsarten (Umschaltung im Webinterface, danach Neustart):
 //  NAT:    Ethernet-LAN ist ein eigenes Netz 192.168.50.0/24 mit DHCP-Server; WLAN ist der Upstream.
@@ -77,7 +78,7 @@ void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, v
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.0";
+constexpr char FIRMWARE_VERSION[] = "3.1";
 constexpr char PRODUCT_NAME[] = "WT32 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-netbridge";  // Name im Router (z. B. http://wt32-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-NetBridge-Setup";
@@ -136,6 +137,22 @@ struct LanClient {
 constexpr int MAX_LAN_CLIENTS = 4;
 LanClient lanClients[MAX_LAN_CLIENTS] = {};
 portMUX_TYPE lanClientsLock = portMUX_INITIALIZER_UNLOCKED;
+
+// Zusatzinfos zu allen Geraeten (WLAN und LAN), gelernt aus mitgelesenen DHCP-Paketen und WLAN-Ereignissen
+struct ClientInfo {
+  bool used;
+  uint8_t mac[6];
+  char name[33];          // Geraetename aus DHCP (Option 12 bzw. 81), leer = unbekannt
+  uint32_t ip;            // aus DHCP-ACK des Routers (Bridge-Modi), Netzwerk-Byte-Reihenfolge
+  uint32_t connectedMs;   // Anmeldung am eigenen WLAN (0 = unbekannt)
+  uint32_t leaseStartMs;  // letzte DHCP-Vergabe bzw. -Verlaengerung (0 = unbekannt)
+  uint32_t leaseSeconds;  // Dauer der Vergabe (0 = die des eigenen DHCP-Servers)
+  uint32_t touchedMs;     // letzte Aenderung (bei voller Liste wird der aelteste Eintrag ersetzt)
+};
+constexpr int MAX_CLIENT_INFOS = 16;
+ClientInfo clientInfos[MAX_CLIENT_INFOS] = {};
+portMUX_TYPE clientInfoLock = portMUX_INITIALIZER_UNLOCKED;
+
 volatile int ethernetSpeedMbit = 0;
 volatile bool ethernetFullDuplex = false;
 volatile uint32_t ethernetLinkSinceMs = 0;
@@ -284,6 +301,182 @@ void updateUdpChecksum(const uint8_t *ipHeader, uint8_t *udp, uint16_t udpLen) {
   if (result == 0) result = 0xFFFF;
   udp[6] = result >> 8;
   udp[7] = result & 0xFF;
+}
+
+// ---------------------------------------------------------------------------
+// Geraete-Infos: Name, Hersteller, Verbindungsdauer, Restlaufzeit der DHCP-Vergabe
+// ---------------------------------------------------------------------------
+
+inline uint32_t stampMs() {
+  const uint32_t now = millis();
+  return now ? now : 1;  // 0 bedeutet "unbekannt"
+}
+
+// Sucht den Eintrag zu einer MAC; legt ihn bei create=true an (bei voller Liste wird der aelteste ersetzt).
+// Nur mit gehaltenem clientInfoLock aufrufen.
+ClientInfo *clientInfoSlot(const uint8_t *mac, bool create) {
+  ClientInfo *freeSlot = nullptr;
+  ClientInfo *oldest = nullptr;
+  for (ClientInfo &info : clientInfos) {
+    if (!info.used) {
+      if (freeSlot == nullptr) freeSlot = &info;
+      continue;
+    }
+    if (memcmp(info.mac, mac, 6) == 0) return &info;
+    if (oldest == nullptr || static_cast<int32_t>(info.touchedMs - oldest->touchedMs) < 0) oldest = &info;
+  }
+  if (!create) return nullptr;
+  ClientInfo *slot = freeSlot != nullptr ? freeSlot : oldest;
+  memset(slot, 0, sizeof(*slot));
+  slot->used = true;
+  memcpy(slot->mac, mac, 6);
+  return slot;
+}
+
+// AP-Modi: Zeitpunkt der Anmeldung am eigenen WLAN merken
+void noteClientConnected(const uint8_t *mac) {
+  portENTER_CRITICAL(&clientInfoLock);
+  ClientInfo *info = clientInfoSlot(mac, true);
+  info->connectedMs = stampMs();
+  info->touchedMs = millis();
+  portEXIT_CRITICAL(&clientInfoLock);
+}
+
+// Private (zufaellige) MAC-Adressen, wie sie Smartphones und Laptops standardmaessig nutzen
+inline bool macIsPrivate(const uint8_t *mac) { return (mac[0] & 0x02) != 0; }
+
+// Hersteller anhand der ersten drei MAC-Bytes (Tabelle aus tools/gen_oui.py), nullptr = unbekannt
+const char *macVendor(const uint8_t *mac) {
+  if (macIsPrivate(mac) || (mac[0] & 0x01)) return nullptr;
+  const uint32_t key = (static_cast<uint32_t>(mac[0]) << 16) | (static_cast<uint32_t>(mac[1]) << 8) | mac[2];
+  uint32_t low = 0;
+  uint32_t high = OUI_TABLE_SIZE;
+  while (low < high) {
+    const uint32_t middle = (low + high) / 2;
+    const uint32_t prefix = OUI_TABLE[middle] >> 8;
+    if (prefix == key) return OUI_VENDORS[OUI_TABLE[middle] & 0xFF];
+    if (prefix < key) low = middle + 1;
+    else high = middle;
+  }
+  return nullptr;
+}
+
+// Uebernimmt einen Geraetenamen: nur druckbare ASCII-Zeichen, hoechstens 32, optional bis zum ersten Punkt
+void copyClientName(char *target, const uint8_t *source, size_t length, bool stopAtDot) {
+  size_t used = 0;
+  for (size_t i = 0; i < length && used < 32; ++i) {
+    const uint8_t c = source[i];
+    if (c == 0 || (stopAtDot && c == '.')) break;
+    if (c >= 0x20 && c < 0x7F) target[used++] = static_cast<char>(c);
+  }
+  while (used > 0 && target[used - 1] == ' ') --used;
+  target[used] = 0;
+}
+
+// Liest DHCP-Pakete mit, ohne sie zu veraendern:
+//  - Anfrage eines Geraets (Port 68 -> 67): Geraetename (Option 12, sonst 81). In den NAT-Modi beantwortet
+//    der eigene DHCP-Server jede Anfrage (REQUEST) sofort - damit beginnt die Vergabe.
+//  - Bestaetigung (ACK) des Routers (Port 67 -> 68, Bridge-Modi): zugewiesene IP und Dauer (Option 51).
+// Darf aus jedem Task aufgerufen werden.
+void sniffDhcp(const uint8_t *frame, uint32_t len) {
+  if (len < BR_ETH_HEADER_LEN + 28 || readBe16(frame + 12) != BR_ETHERTYPE_IPV4) return;
+  const uint8_t *ip = frame + BR_ETH_HEADER_LEN;
+  if ((ip[0] >> 4) != 4 || ip[9] != 17) return;
+  const uint8_t *udp = ip + (ip[0] & 0x0F) * 4;
+  if (udp + 8 > frame + len) return;
+  const uint16_t srcPort = readBe16(udp);
+  const uint16_t dstPort = readBe16(udp + 2);
+  const bool request = srcPort == 68 && dstPort == 67;
+  const bool reply = srcPort == 67 && dstPort == 68;
+  if (!request && !reply) return;
+  const uint16_t udpLen = readBe16(udp + 4);
+  if (udpLen < 8 + BR_DHCP_OPTIONS_OFFSET || udp + udpLen > frame + len) return;
+  uint8_t *dhcp = const_cast<uint8_t *>(udp + 8);
+  const uint8_t *end = udp + udpLen;
+  if (readBe16(dhcp + 236) != 0x6382 || readBe16(dhcp + 238) != 0x5363) return;  // Magic Cookie
+  if (dhcp[1] != 1 || dhcp[2] != 6) return;  // nur Ethernet-Adressen
+  const uint8_t *mac = dhcp + BR_DHCP_CHADDR_OFFSET;
+  if (mac[0] & 0x01) return;
+  uint8_t *options = dhcp + BR_DHCP_OPTIONS_OFFSET;
+  const uint8_t *type = findDhcpOption(options, end, 53);
+  const uint8_t messageType = (type != nullptr && type[1] == 1) ? type[2] : 0;
+
+  if (request) {
+    if (messageType != 1 && messageType != 3 && messageType != 8) return;  // DISCOVER, REQUEST, INFORM
+    char name[33] = "";
+    const uint8_t *option = findDhcpOption(options, end, 12);
+    if (option != nullptr) {
+      copyClientName(name, option + 2, option[1], false);
+    } else if ((option = findDhcpOption(options, end, 81)) != nullptr && option[1] > 3) {
+      // Client FQDN: Flags, 2 Bytes RCODE, dann der Name - als Text oder (Flag E) DNS-kodiert
+      if (option[2] & 0x04) {
+        const uint8_t labelLen = option[5];
+        if (labelLen > 0 && 4 + labelLen <= option[1]) copyClientName(name, option + 6, labelLen, false);
+      } else {
+        copyClientName(name, option + 5, option[1] - 3, true);
+      }
+    }
+    const bool ownServer = bridgeMode == MODE_NAT || bridgeMode == MODE_AP_NAT;
+    bool newName = false;
+    portENTER_CRITICAL(&clientInfoLock);
+    ClientInfo *info = clientInfoSlot(mac, true);
+    if (name[0] != 0 && strcmp(info->name, name) != 0) {
+      strcpy(info->name, name);
+      newName = true;
+    }
+    if (ownServer && messageType == 3) {
+      info->leaseStartMs = stampMs();
+      info->leaseSeconds = 0;  // Dauer des eigenen DHCP-Servers
+    }
+    info->touchedMs = millis();
+    portEXIT_CRITICAL(&clientInfoLock);
+    if (newName) Serial.printf("DHCP: %02X:%02X:%02X:%02X:%02X:%02X heisst \"%s\"\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], name);
+  } else if (messageType == BR_DHCP_MSG_ACK) {
+    uint32_t assigned;
+    memcpy(&assigned, dhcp + BR_DHCP_YIADDR_OFFSET, 4);
+    const uint8_t *lease = findDhcpOption(options, end, 51);
+    portENTER_CRITICAL(&clientInfoLock);
+    ClientInfo *info = clientInfoSlot(mac, false);  // nur Geraete, deren Anfrage wir gesehen haben
+    if (info != nullptr) {
+      if (assigned != 0) info->ip = assigned;
+      if (lease != nullptr && lease[1] == 4) {
+        info->leaseSeconds = (static_cast<uint32_t>(lease[2]) << 24) | (static_cast<uint32_t>(lease[3]) << 16) | (static_cast<uint32_t>(lease[4]) << 8) | lease[5];
+        info->leaseStartMs = stampMs();
+      }
+      info->touchedMs = millis();
+    }
+    portEXIT_CRITICAL(&clientInfoLock);
+  }
+}
+
+// Dauer einer Vergabe des eigenen DHCP-Servers in Sekunden (0 = unbekannt)
+uint32_t dhcpServerLeaseSeconds(esp_netif_t *netif) {
+  uint32_t minutes = 0;
+  if (netif == nullptr || esp_netif_dhcps_option(netif, ESP_NETIF_OP_GET, ESP_NETIF_IP_ADDRESS_LEASE_TIME, &minutes, sizeof(minutes)) != ESP_OK) return 0;
+  return minutes * 60;
+}
+
+// JSON-Felder mit den Zusatzinfos eines Geraets (beginnt mit Komma). Kopiert den Eintrag nach *copy, falls gewuenscht.
+String clientInfoJson(const uint8_t *mac, uint32_t serverLeaseSeconds, uint32_t now, ClientInfo *copy = nullptr) {
+  ClientInfo info{};
+  portENTER_CRITICAL(&clientInfoLock);
+  ClientInfo *slot = clientInfoSlot(mac, false);
+  if (slot != nullptr) info = *slot;
+  portEXIT_CRITICAL(&clientInfoLock);
+  if (copy != nullptr) *copy = info;
+
+  String json;
+  if (info.name[0] != 0) json += ",\"name\":\"" + jsonEscape(String(info.name)) + "\"";
+  const char *vendor = macVendor(mac);
+  if (vendor != nullptr) json += ",\"vendor\":\"" + String(vendor) + "\"";
+  if (macIsPrivate(mac)) json += ",\"private\":true";
+  if (info.connectedMs != 0) json += ",\"since\":" + String((now - info.connectedMs) / 1000);
+  const uint32_t total = info.leaseSeconds != 0 ? info.leaseSeconds : serverLeaseSeconds;
+  if (info.leaseStartMs != 0 && total != 0 && total != 0xFFFFFFFF) {
+    const uint32_t elapsed = (now - info.leaseStartMs) / 1000;
+    json += ",\"leaseLeft\":" + String(elapsed >= total ? 0 : total - elapsed);
+  }
+  return json;
 }
 
 // Schreibt die Client-MAC (chaddr und Option 61) in DHCP-Paketen um.
@@ -676,6 +869,7 @@ String fwPortText(const FwRule &rule) {
 
 // Ethernet -> WLAN (laeuft im Empfangs-Task des Ethernet-Treibers)
 esp_err_t onLanFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv) {
+  sniffDhcp(buffer, len);  // vor dem Umschreiben: chaddr ist noch die MAC des LAN-Geraets
   if (bridgeWifiLinked && len <= 1600 && fwCheckFrame(buffer, len, true) && rewriteFrame(true, buffer, static_cast<uint16_t>(len))) {
     if (esp_wifi_internal_tx(WIFI_IF_STA, buffer, static_cast<uint16_t>(len)) == ESP_OK) framesToWifi = framesToWifi + 1;
     else framesDropped = framesDropped + 1;
@@ -690,6 +884,7 @@ esp_err_t onLanFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, voi
 esp_err_t onWifiFrame(void *buffer, uint16_t len, void *eb) {
   fwLearnDhcp(static_cast<uint8_t *>(buffer), len);
   if (ethernetLinkUp && fwCheckFrame(static_cast<uint8_t *>(buffer), len, false) && rewriteFrame(false, static_cast<uint8_t *>(buffer), len)) {
+    sniffDhcp(static_cast<uint8_t *>(buffer), len);  // nach dem Umschreiben: chaddr ist die MAC des LAN-Geraets
     if (esp_eth_transmit(ethernetHandle, buffer, len) == ESP_OK) framesToLan = framesToLan + 1;
     else framesDropped = framesDropped + 1;
   }
@@ -740,7 +935,7 @@ String languageSwitchHtml() {
 // ---------------------------------------------------------------------------
 
 String pageHeader(const String &title) {
-  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:auto 1fr 1fr 2fr 1fr 3em;gap:6px;align-items:center;margin-top:6px}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input[type=checkbox]{width:auto}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}@media(max-width:600px){.fwrule{grid-template-columns:auto 1fr 1fr}.fwrule input[name$=_dst]{grid-column:span 2}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}</style></head><body><div class='card'>";
+  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:auto 1fr 1fr 2fr 1fr 3em;gap:6px;align-items:center;margin-top:6px}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input[type=checkbox]{width:auto}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}@media(max-width:600px){.fwrule{grid-template-columns:auto 1fr 1fr}.fwrule input[name$=_dst]{grid-column:span 2}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}.cl{padding:9px 0;border-top:1px solid #d6e2ee}.cl:first-child{border-top:0}.cl div{display:flex;justify-content:space-between;gap:10px}.cl div span{color:#4b5865}.cl small{display:block;margin-top:3px}.mini{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px}.mini .bar{width:4px;border-radius:1px}</style></head><body><div class='card'>";
 }
 
 String pageFooter() { return "</div></body></html>"; }
@@ -774,13 +969,14 @@ String lanStatusJson() {
   memcpy(copy, lanClients, sizeof(copy));
   portEXIT_CRITICAL(&lanClientsLock);
 
+  const uint32_t serverLease = bridgeMode == MODE_NAT ? leaseMinutes * 60 : 0;
   json += ",\"clients\":[";
   bool first = true;
   for (const LanClient &client : copy) {
     if (!client.used) continue;
     if (!first) json += ',';
     first = false;
-    json += "{\"ip\":\"" + (client.ip ? IPAddress(client.ip).toString() : String("")) + "\",\"mac\":\"" + macToString(client.mac) + "\",\"seconds\":" + String((now - client.assignedMs) / 1000) + "}";
+    json += "{\"ip\":\"" + (client.ip ? IPAddress(client.ip).toString() : String("")) + "\",\"mac\":\"" + macToString(client.mac) + "\",\"seconds\":" + String((now - client.assignedMs) / 1000) + clientInfoJson(client.mac, serverLease, now) + "}";
   }
   json += "]}";
   return json;
@@ -795,7 +991,7 @@ String modeKey() {
   }
 }
 
-// AP-Modi: verbundene WLAN-Geraete mit Signal und (bei AP-NAT) vergebener IP
+// AP-Modi: verbundene WLAN-Geraete mit Signal, IP, Name, Hersteller, Verbindungsdauer und Restlaufzeit der Vergabe
 String wifiClientsJson() {
   wifi_sta_list_t list{};
   if (esp_wifi_ap_get_sta_list(&list) != ESP_OK) return "[]";
@@ -803,10 +999,18 @@ String wifiClientsJson() {
   const int count = list.num < ESP_WIFI_MAX_CONN_NUM ? list.num : ESP_WIFI_MAX_CONN_NUM;
   for (int i = 0; i < count; ++i) memcpy(pairs[i].mac, list.sta[i].mac, 6);
   const bool haveIps = bridgeMode == MODE_AP_NAT && count > 0 && esp_netif_dhcps_get_clients_by_mac(WiFi.AP.netif(), count, pairs) == ESP_OK;
+  const uint32_t serverLease = bridgeMode == MODE_AP_NAT ? dhcpServerLeaseSeconds(WiFi.AP.netif()) : 0;
+  const uint32_t now = millis();
   String json = "[";
   for (int i = 0; i < count; ++i) {
+    const wifi_sta_info_t &sta = list.sta[i];
+    ClientInfo info{};
+    const String extra = clientInfoJson(sta.mac, serverLease, now, &info);
+    uint32_t ip = haveIps ? pairs[i].ip.addr : 0;
+    if (ip == 0) ip = info.ip;  // AP-Bridge: vom Router vergebene Adresse
+    const char *phy = sta.phy_11n ? "802.11n" : sta.phy_11g ? "802.11g" : sta.phy_11b ? "802.11b" : "";
     if (i) json += ',';
-    json += "{\"mac\":\"" + macToString(list.sta[i].mac) + "\",\"rssi\":" + String(list.sta[i].rssi) + ",\"ip\":\"" + (haveIps && pairs[i].ip.addr ? IPAddress(pairs[i].ip.addr).toString() : String("")) + "\"}";
+    json += "{\"mac\":\"" + macToString(sta.mac) + "\",\"rssi\":" + String(sta.rssi) + ",\"ip\":\"" + (ip ? IPAddress(ip).toString() : String("")) + "\",\"phy\":\"" + phy + "\"" + extra + "}";
   }
   return json + "]";
 }
@@ -912,14 +1116,18 @@ const char *const JS_TEXT_DE = "var L={notConnected:'Nicht mit dem Router verbun
   "addr:'Adressvergabe',byRouter:'direkt durch den Router',appears:'Ger\\u00e4t erscheint im Router als MAC',toWifi:'Frames LAN \\u2192 WLAN',toLan:'Frames WLAN \\u2192 LAN',"
   "dropped:'Verworfen',gw:'Gateway / DNS',lease:'Lease-Dauer',bridgeMac:'MAC der Bridge (LAN)',searching:'Suche nach WLANs ...',"
   "scanFail:'Die WLAN-Suche ist fehlgeschlagen. Bitte erneut versuchen.',none:'Keine WLANs gefunden.',hidden:'(verstecktes WLAN)',secured:' (gesichert)',"
-  "selected:'Ausgew\\u00e4hlt: ',mismatch:'Die beiden Eingaben stimmen nicht \\u00fcberein.',confirmPw:'Passwort \\u00e4ndern? Die Bridge startet danach neu.',noUplink:'Kein Kabel erkannt. Verbinde den LAN-Port mit deinem Router.',homeIp:'IP der Bridge im Heimnetz',gateway:'Gateway',waitingIp:'wartet auf Adresse vom Router',noClients:'Noch keine WLAN-Ger\\u00e4te verbunden.',ackNeeded:'Bitte best\\u00e4tige den Hinweis zum Webinterface.',add:'zur Liste',pwNeeded:'Bitte ein WLAN-Passwort f\\u00fcr den Access Point festlegen (mindestens 8 Zeichen).',nextTry:'n\\u00e4chster Versuch in'};";
+  "selected:'Ausgew\\u00e4hlt: ',mismatch:'Die beiden Eingaben stimmen nicht \\u00fcberein.',confirmPw:'Passwort \\u00e4ndern? Die Bridge startet danach neu.',noUplink:'Kein Kabel erkannt. Verbinde den LAN-Port mit deinem Router.',homeIp:'IP der Bridge im Heimnetz',gateway:'Gateway',waitingIp:'wartet auf Adresse vom Router',noClients:'Noch keine WLAN-Ger\\u00e4te verbunden.',ackNeeded:'Bitte best\\u00e4tige den Hinweis zum Webinterface.',add:'zur Liste',pwNeeded:'Bitte ein WLAN-Passwort f\\u00fcr den Access Point festlegen (mindestens 8 Zeichen).',nextTry:'n\\u00e4chster Versuch in',"
+  "name:'Ger\\u00e4tename',vendor:'Hersteller',noVendor:'Hersteller unbekannt',privMac:'Private MAC',privHint:'Zuf\\u00e4llige Adresse zum Schutz der Privatsph\\u00e4re \\u2013 der Hersteller ist daran nicht erkennbar.',"
+  "connFor:'verbunden seit',leaseShort:'Adresse g\\u00fcltig noch',leaseLeft:'Adresse g\\u00fcltig noch',expired:'abgelaufen'};";
 const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router',noCable:'No cable detected. Plug the cable firmly into the device and the bridge.',"
   "link:'Link',full:'full duplex',half:'half duplex',since:'Cable connected for',device:'Device',notDetected:'not detected yet (not sending anything)',"
   "noLease:'none assigned via DHCP yet',ip:'IP address',unknown:'not known yet',mac:'MAC address',seen:'Detected',assigned:'Address assigned',ago:' ago',"
   "addr:'Address assignment',byRouter:'directly by the router',appears:'Device appears in the router with MAC',toWifi:'Frames LAN \\u2192 WiFi',toLan:'Frames WiFi \\u2192 LAN',"
   "dropped:'Dropped',gw:'Gateway / DNS',lease:'Lease time',bridgeMac:'Bridge MAC (LAN)',searching:'Searching for WiFi networks ...',"
   "scanFail:'The WiFi scan failed. Please try again.',none:'No WiFi networks found.',hidden:'(hidden network)',secured:' (secured)',"
-  "selected:'Selected: ',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.',noUplink:'No cable detected. Connect the LAN port to your router.',homeIp:'Bridge IP in the home network',gateway:'Gateway',waitingIp:'waiting for an address from the router',noClients:'No WiFi devices connected yet.',ackNeeded:'Please confirm the note about the web interface.',add:'add to list',pwNeeded:'Please set a WiFi password for the access point (at least 8 characters).',nextTry:'next attempt in'};";
+  "selected:'Selected: ',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.',noUplink:'No cable detected. Connect the LAN port to your router.',homeIp:'Bridge IP in the home network',gateway:'Gateway',waitingIp:'waiting for an address from the router',noClients:'No WiFi devices connected yet.',ackNeeded:'Please confirm the note about the web interface.',add:'add to list',pwNeeded:'Please set a WiFi password for the access point (at least 8 characters).',nextTry:'next attempt in',"
+  "name:'Device name',vendor:'Manufacturer',noVendor:'unknown manufacturer',privMac:'Private MAC',privHint:'Randomized address for privacy \\u2013 the manufacturer cannot be derived from it.',"
+  "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired'};";
 
 // Alle 10 s eine Diagnosezeile im seriellen Log (hilft bei Verbindungsproblemen)
 void logDiagnostics() {
@@ -1002,14 +1210,14 @@ void showHome() {
   }
 
   const String script = String("<script>") + (uiEnglish ? JS_TEXT_EN : JS_TEXT_DE) +
-    "function status(){fetch('/status').then(r=>r.json()).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);showClients(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{h+=row(w.ip||w.mac,(w.ip?w.mac+', ':'')+w.rssi+' dBm');});c.innerHTML='<table class=\\'info\\'>'+h+'</table>';}"
+    "function status(){fetch('/status').then(r=>r.json()).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);showClients(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+(w.name?w.name+' \\u2013 ':'')+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{let t=w.name||w.ip||w.mac,d=[t!=w.mac?w.mac:'',maker(w)].filter(x=>x).join(' \\u00b7 '),x=bars(w.rssi)+' '+w.rssi+' dBm'+(w.phy?' \\u00b7 '+w.phy:'')+(w.since!=null?' \\u00b7 '+L.connFor+' '+short(w.since):'')+(w.leaseLeft!=null?' \\u00b7 '+L.leaseShort+' '+(w.leaseLeft?short(w.leaseLeft):L.expired):'');h+='<div class=\\'cl\\'><div><b>'+esc(t)+'</b>'+(w.name&&w.ip?'<span>'+w.ip+'</span>':'')+'</div><small>'+d+'</small><small>'+x+'</small></div>';});c.innerHTML=h;}function esc(t){return String(t).replace(/[&<>\"']/g,c=>'&#'+c.charCodeAt(0)+';');}function short(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60);return h?h+' h '+m+' min':m?m+' min':t+' s';}function maker(w){return w.vendor?esc(w.vendor):w.private?'<span title=\\''+L.privHint+'\\'>'+L.privMac+'</span>':L.noVendor;}function bars(r){let p=Math.max(0,Math.min(100,(r+90)*100/60)),n=Math.ceil(p/25),q=p<35?'weak':p<65?'fair':'good',h='<span class=\\'mini\\'>';for(let i=0;i<4;i++)h+='<i class=\\'bar'+(i<n?' on '+q:'')+'\\' style=\\'height:'+(i+1)*25+'%\\'></i>';return h+'</span>';}"
     "function dur(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return (h?h+' h ':'')+(h||m?m+' min ':'')+x+' s';}"
     "function row(k,v){return '<tr><td>'+k+'</td><td><b>'+v+'</b></td></tr>';}"
     "function showLan(s){let l=s.lan,br=s.mode=='bridge',ap=!!s.uplink,box=document.getElementById('lanInfo'),h='';"
     "if(!s.ethLink){box.innerHTML='<p class=\\'wait\\'>'+(ap?L.noUplink:L.noCable)+'</p>';return;}"
     "h+=row(L.link,l.speed+' Mbit/s, '+(l.fullDuplex?L.full:L.half));h+=row(L.since,dur(l.linkSeconds));if(ap){h+=row(L.homeIp,s.uplink.ip||L.waitingIp);if(s.uplink.gw)h+=row(L.gateway,s.uplink.gw);box.innerHTML='<table class=\\'info\\'>'+h+'</table>';return;}"
     "if(!l.clients.length){h+=row(br?L.device:L.ip,br?L.notDetected:L.noLease);}"
-    "l.clients.forEach((c,i)=>{let p=l.clients.length>1?' ('+(i+1)+')':'';h+=row(L.ip+p,c.ip||L.unknown);h+=row(L.mac+p,c.mac);h+=row((br?L.seen:L.assigned)+p,dur(c.seconds)+L.ago);});"
+    "l.clients.forEach((c,i)=>{let p=l.clients.length>1?' ('+(i+1)+')':'';if(c.name)h+=row(L.name+p,esc(c.name));h+=row(L.ip+p,c.ip||L.unknown);h+=row(L.mac+p,c.mac);h+=row(L.vendor+p,maker(c));h+=row((br?L.seen:L.assigned)+p,dur(c.seconds)+L.ago);if(c.leaseLeft!=null)h+=row(L.leaseLeft+p,c.leaseLeft?short(c.leaseLeft):L.expired);});"
     "if(br){h+=row(L.addr,L.byRouter);if(l.staMac)h+=row(L.appears,l.staMac);h+=row(L.toWifi,l.toWifi);h+=row(L.toLan,l.toLan);h+=row(L.dropped,l.dropped);}"
     "else{h+=row(L.gw,'192.168.50.1 / 1.1.1.1');if(l.leaseMinutes)h+=row(L.lease,l.leaseMinutes+' min');if(l.bridgeMac)h+=row(L.bridgeMac,l.bridgeMac);}"
     "box.innerHTML='<table class=\\'info\\'>'+h+'</table>';}"
@@ -1454,6 +1662,7 @@ esp_err_t onNatLanInput(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, 
     free(buffer);
     return ESP_OK;
   }
+  sniffDhcp(buffer, len);
   return esp_netif_receive(ethernetNetif, buffer, len, nullptr);
 }
 
@@ -1463,6 +1672,7 @@ esp_err_t onApNatWifiFrame(void *buffer, uint16_t len, void *eb) {
     esp_wifi_internal_free_rx_buffer(eb);
     return ESP_OK;
   }
+  sniffDhcp(static_cast<uint8_t *>(buffer), len);
   return esp_netif_receive(apNetif, buffer, len, eb);
 }
 
@@ -1480,6 +1690,7 @@ void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, v
       if (!apStationUsed[i]) { apStationUsed[i] = true; memcpy(apStationMacs[i], info->mac, 6); break; }
     }
     portEXIT_CRITICAL(&fwLock);
+    noteClientConnected(info->mac);
   } else if (eventId == WIFI_EVENT_AP_STADISCONNECTED) {
     const wifi_event_ap_stadisconnected_t *info = static_cast<const wifi_event_ap_stadisconnected_t *>(eventData);
     portENTER_CRITICAL(&fwLock);
@@ -1506,6 +1717,7 @@ void deliverCopyToBridge(const void *frame, size_t len) {
 esp_err_t onApWifiFrame(void *buffer, uint16_t len, void *eb) {
   const uint8_t *frame = static_cast<const uint8_t *>(buffer);
   if (len >= BR_ETH_HEADER_LEN && fwCheckApFrame(frame, len)) {
+    sniffDhcp(frame, len);
     const bool forBridge = memcmp(frame, ethMac, 6) == 0;
     const bool group = frame[0] & 0x01;
     if (forBridge || group) deliverCopyToBridge(frame, len);  // Webinterface, ARP, DHCP
@@ -1543,6 +1755,7 @@ esp_err_t onUplinkFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, 
   }
   if (buffer[0] & 0x01) deliverCopyToBridge(buffer, len);  // Broadcast/Multicast: auch an die Bridge
   fwLearnDhcp(buffer, static_cast<uint16_t>(len));
+  sniffDhcp(buffer, len);  // DHCP-Bestaetigung des Routers fuer ein WLAN-Geraet
   if (!fwCheckFrame(buffer, len, false)) {
     free(buffer);
     return ESP_OK;

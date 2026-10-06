@@ -64,6 +64,8 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
 - **Einfache Firewall** für die angeschlossenen Geräte: „Nur Internet, kein Heimnetz“, Webinterface
   sperren, WLAN-Geräte trennen, bis zu 16 eigene Regeln mit Trefferzähler, MAC-Liste in den
   Access-Point-Betriebsarten.
+- **Geräteübersicht**: verbundene Geräte mit Namen (aus DHCP), Hersteller (bzw. „Private MAC“),
+  IP, Signal, WLAN-Standard, Verbindungsdauer und Restlaufzeit der DHCP-Vergabe.
 - **Captive Portal**: Nach dem Verbinden mit dem Einrichtungs-WLAN öffnet sich die Einrichtungsseite
   automatisch.
 - **Webinterface** auf **Deutsch und Englisch** (umschaltbar per Flaggen-Button) über ein eigenes
@@ -241,6 +243,7 @@ IP-Adressen, keine Domainnamen.
 ```
 platformio.ini            Build-Konfiguration
 src/main.cpp              Firmware
+src/oui_table.h           Herstellertabelle (MAC-Präfixe), erzeugt von tools/gen_oui.py
 docs/TUTORIAL.de.md       Tutorial: Kompilieren und Flashen (Deutsch)
 docs/TUTORIAL.en.md       Tutorial: build and flash (English)
 docs/webinterface-v2.4.png Screenshot des Webinterface (echtes Gerät)
@@ -252,12 +255,13 @@ CHANGELOG.de.md           Änderungsprotokoll (Deutsch)
 CHANGELOG.md              changelog (English)
 LICENSE                   MIT-Lizenz
 tools/release.sh          baut die Firmware und legt einen GitHub-Release an
+tools/gen_oui.py          erzeugt src/oui_table.h neu aus der IEEE-OUI-Liste
 backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 ```
 
 ## Versionen
 
-Aktuelle Version: **3.0** – das Projekt heißt jetzt **WT32 NetBridge** (vorher „WT32-ETH01 Ethernet-WLAN-Bridge“).
+Aktuelle Version: **3.1** – zeigt Gerätenamen, Hersteller und Restlaufzeit der DHCP-Vergabe der verbundenen Geräte.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

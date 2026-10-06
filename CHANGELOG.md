@@ -13,6 +13,21 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.1] – 2026-10-06
+
+### Added
+- **More information about connected devices** (WiFi devices in the access point modes, device on
+  the LAN port in NAT and bridge mode):
+  - **Device name** (e.g. "Thorstens-iPhone"), read from the device's DHCP request (option 12 or 81)
+  - **Manufacturer** from the MAC prefix (built-in table of about 8,700 prefixes of common home
+    network manufacturers); randomized addresses are shown as **"Private MAC"**
+  - **Connected for** (WiFi devices), **signal bars** and **WiFi standard** (802.11b/g/n)
+  - **Remaining DHCP lease time**: in NAT and AP-NAT from the bridge's own DHCP server, in the
+    bridge modes from the router's DHCP acknowledgement
+  - AP bridge: the IP address assigned by the router is now shown as well
+- The firewall MAC list picker shows device names.
+- `tools/gen_oui.py` regenerates the manufacturer table from the official IEEE list.
+
 ## [3.0] – 2026-10-06
 
 ### Changed

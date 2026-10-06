@@ -14,6 +14,22 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.1] – 06.10.2026
+
+### Neu
+- **Mehr Infos zu verbundenen Geräten** (WLAN-Geräte in den Access-Point-Betriebsarten, Gerät am
+  LAN-Port im NAT- und Bridge-Modus):
+  - **Gerätename** (z. B. „Thorstens-iPhone“), gelesen aus der DHCP-Anfrage des Geräts (Option 12
+    bzw. 81)
+  - **Hersteller** anhand des MAC-Präfixes (eingebaute Tabelle mit rund 8.700 Präfixen gängiger
+    Heimnetz-Hersteller); zufällige Adressen erscheinen als **„Private MAC“**
+  - **Verbunden seit** (WLAN-Geräte), **Signalbalken** und **WLAN-Standard** (802.11b/g/n)
+  - **Restlaufzeit der DHCP-Vergabe**: bei NAT und AP-NAT vom eigenen DHCP-Server, in den
+    Bridge-Modi aus der Bestätigung des Routers
+  - AP-Bridge: Die vom Router vergebene IP-Adresse wird jetzt ebenfalls angezeigt
+- Die Auswahl für die MAC-Liste der Firewall zeigt die Gerätenamen.
+- `tools/gen_oui.py` erzeugt die Herstellertabelle neu aus der offiziellen IEEE-Liste.
+
 ## [3.0] – 06.10.2026
 
 ### Geändert
