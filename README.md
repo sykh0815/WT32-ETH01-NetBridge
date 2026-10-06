@@ -2,13 +2,13 @@
 
 🇬🇧 **English** | 🇩🇪 [Deutsch](README.de.md)
 
-[![Version](https://img.shields.io/badge/Version-2.4-1263a6)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.8-1263a6)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#build-and-flash)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 2.4** – see the [changelog](CHANGELOG.md)
+**Version 2.8** – see the [changelog](CHANGELOG.md)
 
 Firmware for the **WT32-ETH01 v1.4** (ESP32 + LAN8720) that brings a device with an Ethernet port
 into your WiFi network: a **WiFi adapter for devices without WiFi**, or a **wireless bridge for the
@@ -37,12 +37,21 @@ top right.
 
 ## Features
 
-- **Two operating modes**, selectable in the web interface:
+- **Four operating modes**, selectable in the web interface:
   - **NAT – own network** (default): separate subnet `192.168.50.0/24` on the LAN port with a DHCP
     server, internet access through NAPT. Several devices possible (e.g. via a switch).
     Data rate up to approx. 10 Mbit/s.
   - **Bridge – straight into your home network** (experimental): the LAN device gets its IP address
     **directly from your router**. One device only, IPv4 only. Data rate above 30 Mbit/s.
+  - **Access point – own WiFi network (NAT)**: the LAN port goes to your router, the bridge creates
+    its own WiFi (`192.168.4.x`) for up to approx. 8 devices. The web interface stays reachable.
+  - **Access point – WiFi straight into your home network (bridge)**: WiFi devices get their IP
+    directly from your router. The web interface is then reachable via the IP the router assigns to
+    the bridge (e.g. `http://wt32-bridge.fritz.box`).
+- **Emergency reset**: switching the power off and on 3 times in a row returns to NAT mode.
+- **Simple firewall** for the connected devices: "Internet only, no home network", block the web
+  interface, isolate WiFi devices, up to 16 custom rules with hit counters, MAC allow list in the
+  access point modes.
 - **Web interface** in **English and German** (switchable via flag buttons) via a dedicated setup
   WiFi (password changeable in the web interface):
   - WiFi scan and entry of the router credentials
@@ -123,6 +132,11 @@ The bridge uses two passwords:
 | **Setup WiFi** `WT32-Bridge-Setup` (initially **open**, no password) | in the ESP32's flash (NVS); an optional default can be set in `SETUP_AP_PASSWORD` in `src/main.cpp` | in the web interface under "Setup WiFi" (8–63 characters), the bridge restarts |
 | **Router WiFi** | in the ESP32's flash (NVS), not in the code | enter it again in the web interface under "Router WiFi" and click "Save and connect" |
 
+> **Open WiFi on purpose:** in the WiFi settings (and with the access point modes) you can tick
+> "Open WiFi without password", e.g. for a guest WiFi. A red warning explains the risks and stays
+> visible at the top of the web interface; combine it with the firewall ("Internet only", "Block
+> the web interface").
+
 > **Important:** on first start the setup WiFi is open, so anyone in range could change the
 > settings. The web interface shows a prominent red warning until you set a password; do this
 > right after setup. Details: [tutorial, WiFi passwords](docs/TUTORIAL.en.md#7-find-and-change-the-wifi-passwords).
@@ -159,6 +173,53 @@ Limitations:
 - after switching the operating mode, unplug the cable of the LAN device briefly so it requests a
   new address
 
+### Access point – own WiFi network (NAT)
+
+Connect the LAN port to your router. The bridge gets an address from the router via DHCP and creates
+its own WiFi (name and password from the "Setup WiFi" section). WiFi devices get addresses in the
+`192.168.4.x` network; DNS is the router's DNS server. The web interface stays reachable at
+`192.168.4.1` and via the bridge's IP in the home network.
+
+- up to approx. 8 WiFi devices, 2.4 GHz only, the data rate is shared by all devices
+- a WiFi password must be set before this mode can be selected
+
+### Access point – WiFi straight into your home network (bridge)
+
+Connect the LAN port to your router. Frames are passed between Ethernet and the WiFi access point
+on layer 2 (like Espressif's
+[`eth2ap`](https://github.com/espressif/esp-idf/tree/master/examples/network/eth2ap) example). WiFi
+devices get their addresses directly from your router and are visible in the home network
+(AirPlay, Chromecast, printers).
+
+> **Note:** in this mode the web interface is **no longer at 192.168.4.1**. The bridge gets its own
+> address from your router via DHCP (hostname `wt32-bridge`) and the web interface is reachable at
+> that address – from the home network and from the bridge's WiFi, e.g. `http://wt32-bridge.fritz.box`
+> or the IP shown in your router's device list. The web interface asks for a confirmation before
+> switching.
+>
+> **Back to setup (emergency reset):** switch the power off and on again **3 times in a row**, each
+> time within 10 seconds. The bridge then starts in NAT mode with the setup WiFi; all other settings
+> are kept.
+
+## Firewall
+
+Section "Firewall" in the web interface. It checks the traffic of the **connected devices** (device
+on the LAN port, or the WiFi devices in the access point modes). Changes apply immediately, no restart
+needed.
+
+| Option | Effect |
+|--------|--------|
+| Internet only, no home network | blocks private addresses (10.x, 172.16–31.x, 192.168.x, multicast); DHCP, DNS and ping to the router stay allowed. In the bridge modes it also blocks connections from the home network to the device. |
+| Block the bridge web interface | connected devices cannot open the settings page |
+| Isolate WiFi devices (AP modes) | WiFi devices of the bridge cannot reach each other |
+| Custom rules (up to 16) | block/allow, protocol (all/TCP/UDP/ICMP), target IP or network, port or port range; first match wins; hit counter per rule |
+| Everything else | allow (default) or block |
+| MAC filter (AP modes) | only listed WiFi devices may connect; protects you from locking yourself out |
+
+Limitations: stateless (no connection tracking; NAT already blocks unsolicited inbound traffic in
+the NAT modes), IPv4 only (IPv6 is blocked while the firewall is enabled), IP addresses only, no
+domain names.
+
 ## Project structure
 
 ```
@@ -178,7 +239,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **2.4** – web interface in English and German with a language switch.
+Current version: **2.8** – optional open WiFi without password (with a visible warning).
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 
@@ -193,7 +254,7 @@ If this project helps you, I'd be happy about a coffee:
 The serial output (115200 baud) shows the current state, for example:
 
 ```
-WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.4
+WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.8
 Betriebsart: NAT
 DHCP server started on interface ETH_LAN with IP: 192.168.50.1
 Ethernet-LAN: 192.168.50.1, DHCP-Server laeuft

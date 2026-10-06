@@ -9,6 +9,8 @@
 #include <esp_eth.h>
 #include <esp_eth_netif_glue.h>
 #include <dhcpserver/dhcpserver.h>
+#include <freertos/queue.h>
+#include <esp_system.h>
 
 // Zwei Betriebsarten (Umschaltung im Webinterface, danach Neustart):
 //  NAT:    Ethernet-LAN ist ein eigenes Netz 192.168.50.0/24 mit DHCP-Server; WLAN ist der Upstream.
@@ -17,7 +19,8 @@
 //          werden die MAC-Adressen umgeschrieben (Verfahren wie Espressifs Beispiel "sta2eth").
 //          Nur EIN Geraet am LAN-Port, nur IPv4.
 
-enum BridgeMode : uint8_t { MODE_NAT = 0, MODE_BRIDGE = 1 };
+// NAT/BRIDGE: WLAN-Client, Geraet am LAN-Port.  AP_NAT/AP_BRIDGE: LAN-Port am Router, eigenes WLAN.
+enum BridgeMode : uint8_t { MODE_NAT = 0, MODE_BRIDGE = 1, MODE_AP_NAT = 2, MODE_AP_BRIDGE = 3 };
 
 String htmlEscape(const String &text);
 String jsonEscape(const String &text);
@@ -33,10 +36,16 @@ inline const char *T(const char *de, const char *en);
 String signalMeterHtml();
 String macToString(const uint8_t *mac);
 String lanStatusJson();
+String modeKey();
+String wifiClientsJson();
 void showStatus();
 void showNetworks();
 void showHome();
 void connectToRouter();
+void handleRouterConnection();
+void onStaDisconnectEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData);
+const char *staReasonText();
+void resetReconnect();
 void resumeRouterConnection();
 void saveSettings();
 void saveMode();
@@ -50,10 +59,24 @@ bool installEthernetDriver();
 void startNatLan();
 void startBridgeLan();
 void startLanServices();
+void startApNatUplink();
+void startApBridge();
+bool isApMode();
+void onUplinkIpEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData);
+void onApDriverEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData);
+bool isValidSsid(const String &ssid);
+bool applyApCredentials(String ssid, const String &password, const String &repeat, String &error, bool openWifi);
+String openWifiWarningHtml();
+void saveFirewall();
+String firewallSectionHtml();
+String firewallStatusJson();
+void fwLoad();
+void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData);
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "2.4";
+constexpr char FIRMWARE_VERSION[] = "2.8";
+constexpr char BRIDGE_HOSTNAME[] = "wt32-bridge";  // Name im Router (z. B. http://wt32-bridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-Bridge-Setup";
 // Standard-Passwort des Einrichtungs-WLANs. Leer = offenes WLAN beim ersten Start; das Webinterface
 // fordert dann auffaellig dazu auf, ein Passwort festzulegen.
@@ -66,14 +89,37 @@ esp_netif_t *ethernetNetif = nullptr;
 esp_eth_handle_t ethernetHandle = nullptr;
 String routerSsid;
 String routerPassword;
+String apSsid;           // Name des eigenen WLANs (Einrichtungs-WLAN bzw. Access Point)
 String setupApPassword;  // aktuelles Passwort des Einrichtungs-WLANs (NVS, sonst Standard; leer = offen)
+bool apOpenChosen = false;  // offenes WLAN bewusst gewaehlt (statt "noch kein Passwort gesetzt")
 volatile bool ethernetLinkUp = false;
 volatile bool ethernetLanReady = false;
 volatile bool wifiConnected = false;
 volatile bool ethernetServicesPending = false;
 uint32_t restartAtMs = 0;
+uint32_t bootCounterClearAtMs = 0;    // Notfall-Reset: Zaehler fuer schnelles Aus-/Einschalten
+bool recoveryTriggered = false;
+volatile bool apDnsUpdatePending = false;  // AP-NAT: DNS des Routers an WLAN-Clients weitergeben
+volatile int apStationCount = 0;          // AP-Bridge: verbundene WLAN-Geraete
+QueueHandle_t apForwardQueue = nullptr;   // AP-Bridge: Ethernet -> WLAN (WLAN ist langsamer)
+esp_netif_t *apNetif = nullptr;          // Netzwerk-Schnittstelle des Access Points
+struct ForwardFrame { uint8_t *data; uint16_t len; };
 bool scanPausedConnect = false;  // Verbindungsversuche waehrend eines WLAN-Scans angehalten
 uint32_t scanStartedMs = 0;
+
+// Verbindungsversuche zum Router: Jeder Versuch durchsucht die Funkkanaele. Weil Einrichtungs-WLAN und
+// Router-Verbindung denselben Funkteil nutzen, ist das Einrichtungs-WLAN waehrenddessen kaum erreichbar.
+// Daher: Versuche mit wachsendem Abstand statt pausenlos, und - wenn bekannt - nur auf dem Kanal des Routers.
+constexpr uint32_t RECONNECT_MIN_MS = 10000;
+constexpr uint32_t RECONNECT_MAX_MS = 120000;
+uint32_t reconnectDelayMs = RECONNECT_MIN_MS;
+uint32_t nextConnectAttemptMs = 0;   // 0 = kein Versuch geplant
+uint32_t failedConnectAttempts = 0;
+volatile uint8_t lastStaDisconnectReason = 0;
+volatile bool staGotConnected = false;
+volatile bool staLinkUp = false;     // mit dem Router verbunden (evtl. noch ohne IP)
+uint8_t routerChannel = 0;           // Kanal und BSSID der letzten erfolgreichen Verbindung
+uint8_t routerBssid[6] = {};
 
 // Informationen ueber die Geraete am LAN-Port
 struct LanClient {
@@ -91,6 +137,7 @@ volatile uint32_t ethernetLinkSinceMs = 0;
 
 // Zustand des Bridge-Modus (wird aus den Empfangs-Tasks von WLAN und Ethernet benutzt)
 uint8_t staMac[6] = {};
+uint8_t ethMac[6] = {};   // MAC der Ethernet-Schnittstelle (AP-Bridge: Adresse des Webinterface im Heimnetz)
 uint8_t lanDeviceMac[6] = {};
 volatile bool lanDeviceKnown = false;
 volatile bool bridgeWifiLinked = false;
@@ -327,9 +374,304 @@ bool rewriteFrame(bool fromLan, uint8_t *frame, uint16_t len) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Firewall (zustandslos, nur IPv4)
+//
+// Geprueft wird der Verkehr der angeschlossenen Geraete: Geraet am LAN-Port (NAT, Bridge) bzw.
+// WLAN-Geraete (Access-Point-Modi). Ausgehend gelten Schalter + Regelliste, eingehend (nur in den
+// Bridge-Modi, wo es kein NAT gibt) der Schalter "Nur Internet, kein Heimnetz".
+// ---------------------------------------------------------------------------
+
+enum FwProto : uint8_t { FW_ANY = 0, FW_TCP = 1, FW_UDP = 2, FW_ICMP = 3 };
+struct FwRule {
+  uint8_t enabled;
+  uint8_t block;      // 1 = sperren, 0 = erlauben
+  uint8_t proto;      // FwProto
+  uint8_t prefix;     // 0..32
+  uint32_t net;       // Host-Byte-Reihenfolge
+  uint16_t portFrom;  // 0 = alle Ports
+  uint16_t portTo;
+};
+constexpr int FW_MAX_RULES = 16;
+constexpr int FW_MAX_MACS = 16;
+constexpr int FW_MAX_STATIONS = 10;
+
+FwRule fwRules[FW_MAX_RULES] = {};
+int fwRuleCount = 0;
+volatile uint32_t fwHits[FW_MAX_RULES] = {};
+volatile uint32_t fwBlocked = 0;
+bool fwEnabled = false;
+bool fwNoHome = false;
+bool fwNoAdmin = false;
+bool fwIsolate = false;
+bool fwDefaultBlock = false;
+bool fwMacFilter = false;
+uint8_t fwMacs[FW_MAX_MACS][6] = {};
+int fwMacCount = 0;
+volatile uint32_t fwRouterIp = 0;   // Router/Gateway im Heimnetz (Host-Byte-Reihenfolge)
+volatile uint32_t fwDnsIp = 0;      // DNS-Server im Heimnetz
+volatile uint32_t fwOwnIpExtra = 0; // weitere eigene IP der Bridge (Router-Netz bzw. Uplink)
+uint8_t apStationMacs[FW_MAX_STATIONS][6] = {};
+bool apStationUsed[FW_MAX_STATIONS] = {};
+portMUX_TYPE fwLock = portMUX_INITIALIZER_UNLOCKED;
+
+constexpr uint32_t IP_NAT_LAN = 0xC0A83201;  // 192.168.50.1
+constexpr uint32_t IP_AP = 0xC0A80401;       // 192.168.4.1
+
+inline uint32_t toHostOrder(uint32_t networkOrder) { return __builtin_bswap32(networkOrder); }
+inline uint32_t prefixMask(uint8_t prefix) { return prefix == 0 ? 0 : (0xFFFFFFFFu << (32 - prefix)); }
+
+bool fwIsPrivateOrLocal(uint32_t ip) {
+  return (ip >> 24) == 10 || (ip >> 20) == 0xAC1 || (ip >> 16) == 0xC0A8 || (ip >> 16) == 0xA9FE ||
+         (ip >> 28) == 0xE || ip == 0xFFFFFFFFu || (ip >> 24) == 127 || ip == 0;
+}
+
+bool fwIsOwnIp(uint32_t ip) {
+  return ip == IP_NAT_LAN || ip == IP_AP || (fwOwnIpExtra != 0 && ip == fwOwnIpExtra);
+}
+
+bool fwDrop() {
+  fwBlocked = fwBlocked + 1;
+  return false;
+}
+
+bool fwMacListed(const uint8_t *mac) {
+  for (int i = 0; i < fwMacCount; ++i) {
+    if (memcmp(fwMacs[i], mac, 6) == 0) return true;
+  }
+  return false;
+}
+
+bool fwIsApStation(const uint8_t *mac) {
+  for (int i = 0; i < FW_MAX_STATIONS; ++i) {
+    if (apStationUsed[i] && memcmp(apStationMacs[i], mac, 6) == 0) return true;
+  }
+  return false;
+}
+
+// IPv4-Paket von einem angeschlossenen Geraet. true = durchlassen.
+bool fwCheckOutbound(const uint8_t *ip, size_t len) {
+  if (len < 20 || (ip[0] >> 4) != 4) return fwDrop();
+  const size_t ihl = (ip[0] & 0x0F) * 4;
+  if (ihl < 20 || len < ihl) return fwDrop();
+  const uint8_t protocol = ip[9];
+  uint32_t dstNet;
+  memcpy(&dstNet, ip + 16, 4);
+  const uint32_t dst = toHostOrder(dstNet);
+  const bool firstFragment = ((((ip[6] & 0x1F) << 8) | ip[7]) == 0);
+  uint16_t sport = 0, dport = 0;
+  if ((protocol == 6 || protocol == 17) && firstFragment && len >= ihl + 4) {
+    sport = readBe16(ip + ihl);
+    dport = readBe16(ip + ihl + 2);
+  }
+  if (protocol == 17 && sport == 68 && dport == 67) return true;  // DHCP immer erlauben
+
+  if (fwIsOwnIp(dst)) {
+    if (fwNoAdmin && protocol == 6 && dport == 80) return fwDrop();
+    return true;  // DHCP, DNS-Weiterleitung, Ping zur Bridge selbst
+  }
+  if (fwIsolate && isApMode() && (dst >> 8) == (IP_AP >> 8)) return fwDrop();  // anderes WLAN-Geraet
+  if (fwNoHome && fwIsPrivateOrLocal(dst)) {
+    const bool infra = (dst != 0 && (dst == fwRouterIp || dst == fwDnsIp)) && (protocol == 1 || dport == 53);
+    if (!infra) return fwDrop();
+  }
+
+  int verdict = -1;
+  portENTER_CRITICAL(&fwLock);
+  for (int i = 0; i < fwRuleCount; ++i) {
+    const FwRule &rule = fwRules[i];
+    if (!rule.enabled) continue;
+    if (rule.proto == FW_TCP && protocol != 6) continue;
+    if (rule.proto == FW_UDP && protocol != 17) continue;
+    if (rule.proto == FW_ICMP && protocol != 1) continue;
+    const uint32_t mask = prefixMask(rule.prefix);
+    if ((dst & mask) != (rule.net & mask)) continue;
+    if (rule.portFrom != 0) {
+      if (protocol != 6 && protocol != 17) continue;
+      if (dport < rule.portFrom || dport > rule.portTo) continue;
+    }
+    fwHits[i] = fwHits[i] + 1;
+    verdict = rule.block;
+    break;
+  }
+  portEXIT_CRITICAL(&fwLock);
+  if (verdict < 0) verdict = fwDefaultBlock ? 1 : 0;
+  return verdict ? fwDrop() : true;
+}
+
+// IPv4-Paket zum angeschlossenen Geraet (nur Bridge-Modi). true = durchlassen.
+bool fwCheckInbound(const uint8_t *ip, size_t len) {
+  if (!fwNoHome) return true;
+  if (len < 20 || (ip[0] >> 4) != 4) return true;
+  uint32_t srcNet;
+  memcpy(&srcNet, ip + 12, 4);
+  const uint32_t src = toHostOrder(srcNet);
+  if (src == 0 || src == fwRouterIp || src == fwDnsIp) return true;
+  if (fwIsPrivateOrLocal(src)) return fwDrop();
+  return true;
+}
+
+// Ethernet-Frame pruefen. outbound = vom angeschlossenen Geraet. true = durchlassen.
+bool fwCheckFrame(const uint8_t *frame, size_t len, bool outbound) {
+  if (!fwEnabled || len < BR_ETH_HEADER_LEN) return true;
+  const uint16_t type = readBe16(frame + 12);
+  if (type == 0x86DD) return fwDrop();  // IPv6 bei aktiver Firewall sperren (Regeln gelten nur fuer IPv4)
+  if (type != BR_ETHERTYPE_IPV4) return true;  // ARP usw.
+  return outbound ? fwCheckOutbound(frame + BR_ETH_HEADER_LEN, len - BR_ETH_HEADER_LEN)
+                  : fwCheckInbound(frame + BR_ETH_HEADER_LEN, len - BR_ETH_HEADER_LEN);
+}
+
+// Frame eines WLAN-Geraets im Access-Point-Modus: Isolation + Firewall
+bool fwCheckApFrame(const uint8_t *frame, size_t len) {
+  if (!fwEnabled) return true;
+  if (fwIsolate && len >= 6 && !(frame[0] & 0x01) && fwIsApStation(frame)) return fwDrop();
+  return fwCheckFrame(frame, len, true);
+}
+
+// Router und DNS aus einer DHCP-Antwort (ACK) lernen - fuer "Nur Internet, kein Heimnetz" in den Bridge-Modi
+void fwLearnDhcp(uint8_t *frame, uint16_t len) {
+  if (len < BR_ETH_HEADER_LEN + 20 || readBe16(frame + 12) != BR_ETHERTYPE_IPV4) return;
+  uint8_t *ip = frame + BR_ETH_HEADER_LEN;
+  if ((ip[0] >> 4) != 4 || ip[9] != 17) return;
+  uint8_t *udp = ip + (ip[0] & 0x0F) * 4;
+  if (udp + 8 > frame + len || readBe16(udp) != 67 || readBe16(udp + 2) != 68) return;
+  const uint16_t udpLen = readBe16(udp + 4);
+  if (udpLen < 8 + BR_DHCP_OPTIONS_OFFSET || udp + udpLen > frame + len) return;
+  uint8_t *dhcp = udp + 8;
+  const uint8_t *end = udp + udpLen;
+  if (readBe16(dhcp + 236) != 0x6382 || readBe16(dhcp + 238) != 0x5363) return;
+  uint8_t *type = findDhcpOption(dhcp + BR_DHCP_OPTIONS_OFFSET, end, 53);
+  if (type == nullptr || type[1] != 1 || type[2] != BR_DHCP_MSG_ACK) return;
+  uint32_t value;
+  uint8_t *router = findDhcpOption(dhcp + BR_DHCP_OPTIONS_OFFSET, end, 3);
+  if (router != nullptr && router[1] >= 4) { memcpy(&value, router + 2, 4); fwRouterIp = toHostOrder(value); }
+  uint8_t *dns = findDhcpOption(dhcp + BR_DHCP_OPTIONS_OFFSET, end, 6);
+  if (dns != nullptr && dns[1] >= 4) { memcpy(&value, dns + 2, 4); fwDnsIp = toHostOrder(value); }
+}
+
+// --- Einstellungen laden/speichern -----------------------------------------
+
+void fwLoad() {
+  fwEnabled = preferences.getBool("fw_on", false);
+  fwNoHome = preferences.getBool("fw_nohome", false);
+  fwNoAdmin = preferences.getBool("fw_noadmin", false);
+  fwIsolate = preferences.getBool("fw_isolate", false);
+  fwDefaultBlock = preferences.getBool("fw_defblk", false);
+  fwMacFilter = preferences.getBool("fw_macon", false);
+  fwRuleCount = 0;
+  const size_t ruleBytes = preferences.getBytesLength("fw_rules");
+  if (ruleBytes > 0 && ruleBytes % sizeof(FwRule) == 0 && ruleBytes <= sizeof(fwRules)) {
+    preferences.getBytes("fw_rules", fwRules, ruleBytes);
+    fwRuleCount = ruleBytes / sizeof(FwRule);
+  }
+  fwMacCount = 0;
+  const size_t macBytes = preferences.getBytesLength("fw_macs");
+  if (macBytes > 0 && macBytes % 6 == 0 && macBytes <= sizeof(fwMacs)) {
+    preferences.getBytes("fw_macs", fwMacs, macBytes);
+    fwMacCount = macBytes / 6;
+  }
+  if (fwEnabled) Serial.printf("Firewall aktiv: %d Regeln, %d MAC-Adressen\n", fwRuleCount, fwMacCount);
+}
+
+void fwSave() {
+  preferences.putBool("fw_on", fwEnabled);
+  preferences.putBool("fw_nohome", fwNoHome);
+  preferences.putBool("fw_noadmin", fwNoAdmin);
+  preferences.putBool("fw_isolate", fwIsolate);
+  preferences.putBool("fw_defblk", fwDefaultBlock);
+  preferences.putBool("fw_macon", fwMacFilter);
+  if (fwRuleCount > 0) preferences.putBytes("fw_rules", fwRules, fwRuleCount * sizeof(FwRule));
+  else preferences.remove("fw_rules");
+  if (fwMacCount > 0) preferences.putBytes("fw_macs", fwMacs, fwMacCount * 6);
+  else preferences.remove("fw_macs");
+}
+
+// "192.168.1.0/24", "192.168.1.10", "*" -> Netz + Praefix
+bool fwParseTarget(String text, uint32_t &net, uint8_t &prefix) {
+  text.trim();
+  if (text == "*" || text == "any" || text == "0.0.0.0/0") { net = 0; prefix = 0; return true; }
+  int slash = text.indexOf('/');
+  String address = slash >= 0 ? text.substring(0, slash) : text;
+  int bits = 32;
+  if (slash >= 0) {
+    const String bitsText = text.substring(slash + 1);
+    if (bitsText.isEmpty()) return false;
+    for (size_t i = 0; i < bitsText.length(); ++i) if (bitsText[i] < '0' || bitsText[i] > '9') return false;
+    bits = bitsText.toInt();
+    if (bits < 0 || bits > 32) return false;
+  }
+  uint32_t value = 0;
+  int parts = 0;
+  int current = -1;
+  for (size_t i = 0; i <= address.length(); ++i) {
+    const char c = i < address.length() ? address[i] : '.';
+    if (c >= '0' && c <= '9') {
+      current = (current < 0 ? 0 : current) * 10 + (c - '0');
+      if (current > 255) return false;
+    } else if (c == '.') {
+      if (current < 0 || parts >= 4) return false;
+      value = (value << 8) | static_cast<uint32_t>(current);
+      ++parts;
+      current = -1;
+    } else {
+      return false;
+    }
+  }
+  if (parts != 4) return false;
+  prefix = static_cast<uint8_t>(bits);
+  net = value & prefixMask(prefix);
+  return true;
+}
+
+// "" -> alle, "443", "1000-2000"
+bool fwParsePorts(String text, uint16_t &from, uint16_t &to) {
+  text.trim();
+  if (text.isEmpty()) { from = 0; to = 0; return true; }
+  const int dash = text.indexOf('-');
+  const String first = dash >= 0 ? text.substring(0, dash) : text;
+  const String second = dash >= 0 ? text.substring(dash + 1) : text;
+  auto parse = [](const String &part, long &out) {
+    if (part.isEmpty() || part.length() > 5) return false;
+    for (size_t i = 0; i < part.length(); ++i) if (part[i] < '0' || part[i] > '9') return false;
+    out = part.toInt();
+    return out >= 1 && out <= 65535;
+  };
+  long a = 0, b = 0;
+  if (!parse(first, a) || !parse(second, b) || b < a) return false;
+  from = static_cast<uint16_t>(a);
+  to = static_cast<uint16_t>(b);
+  return true;
+}
+
+bool fwParseMac(String text, uint8_t *mac) {
+  text.trim();
+  text.replace("-", ":");
+  if (text.length() != 17) return false;
+  for (int i = 0; i < 6; ++i) {
+    char hex[3] = {text[i * 3], text[i * 3 + 1], 0};
+    if (i < 5 && text[i * 3 + 2] != ':') return false;
+    if (!isxdigit(static_cast<unsigned char>(hex[0])) || !isxdigit(static_cast<unsigned char>(hex[1]))) return false;
+    mac[i] = static_cast<uint8_t>(strtoul(hex, nullptr, 16));
+  }
+  return true;
+}
+
+String fwTargetText(const FwRule &rule) {
+  if (rule.prefix == 0) return "*";
+  String text = String(rule.net >> 24) + "." + String((rule.net >> 16) & 0xFF) + "." + String((rule.net >> 8) & 0xFF) + "." + String(rule.net & 0xFF);
+  if (rule.prefix != 32) text += "/" + String(rule.prefix);
+  return text;
+}
+
+String fwPortText(const FwRule &rule) {
+  if (rule.portFrom == 0) return "";
+  if (rule.portFrom == rule.portTo) return String(rule.portFrom);
+  return String(rule.portFrom) + "-" + String(rule.portTo);
+}
+
 // Ethernet -> WLAN (laeuft im Empfangs-Task des Ethernet-Treibers)
 esp_err_t onLanFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv) {
-  if (bridgeWifiLinked && len <= 1600 && rewriteFrame(true, buffer, static_cast<uint16_t>(len))) {
+  if (bridgeWifiLinked && len <= 1600 && fwCheckFrame(buffer, len, true) && rewriteFrame(true, buffer, static_cast<uint16_t>(len))) {
     if (esp_wifi_internal_tx(WIFI_IF_STA, buffer, static_cast<uint16_t>(len)) == ESP_OK) framesToWifi = framesToWifi + 1;
     else framesDropped = framesDropped + 1;
   } else {
@@ -341,7 +683,8 @@ esp_err_t onLanFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, voi
 
 // WLAN -> Ethernet (laeuft im WLAN-Task)
 esp_err_t onWifiFrame(void *buffer, uint16_t len, void *eb) {
-  if (ethernetLinkUp && rewriteFrame(false, static_cast<uint8_t *>(buffer), len)) {
+  fwLearnDhcp(static_cast<uint8_t *>(buffer), len);
+  if (ethernetLinkUp && fwCheckFrame(static_cast<uint8_t *>(buffer), len, false) && rewriteFrame(false, static_cast<uint8_t *>(buffer), len)) {
     if (esp_eth_transmit(ethernetHandle, buffer, len) == ESP_OK) framesToLan = framesToLan + 1;
     else framesDropped = framesDropped + 1;
   }
@@ -392,7 +735,7 @@ String languageSwitchHtml() {
 // ---------------------------------------------------------------------------
 
 String pageHeader(const String &title) {
-  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}</style></head><body><div class='card'>";
+  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:auto 1fr 1fr 2fr 1fr 3em;gap:6px;align-items:center;margin-top:6px}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input[type=checkbox]{width:auto}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}@media(max-width:600px){.fwrule{grid-template-columns:auto 1fr 1fr}.fwrule input[name$=_dst]{grid-column:span 2}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}</style></head><body><div class='card'>";
 }
 
 String pageFooter() { return "</div></body></html>"; }
@@ -416,7 +759,8 @@ String lanStatusJson() {
     json += ",\"toWifi\":" + String(framesToWifi) + ",\"toLan\":" + String(framesToLan) + ",\"dropped\":" + String(framesDropped);
   }
   uint32_t leaseMinutes = 0;
-  if (ethernetNetif != nullptr && esp_netif_dhcps_option(ethernetNetif, ESP_NETIF_OP_GET, ESP_NETIF_IP_ADDRESS_LEASE_TIME, &leaseMinutes, sizeof(leaseMinutes)) == ESP_OK) {
+  // Nur im NAT-Modus hat die Ethernet-Schnittstelle einen DHCP-Server (im AP-NAT-Modus ist sie DHCP-Client)
+  if (bridgeMode == MODE_NAT && ethernetNetif != nullptr && esp_netif_dhcps_option(ethernetNetif, ESP_NETIF_OP_GET, ESP_NETIF_IP_ADDRESS_LEASE_TIME, &leaseMinutes, sizeof(leaseMinutes)) == ESP_OK) {
     json += ",\"leaseMinutes\":" + String(leaseMinutes);
   }
 
@@ -437,9 +781,47 @@ String lanStatusJson() {
   return json;
 }
 
+String modeKey() {
+  switch (bridgeMode) {
+    case MODE_BRIDGE: return "bridge";
+    case MODE_AP_NAT: return "apnat";
+    case MODE_AP_BRIDGE: return "apbridge";
+    default: return "nat";
+  }
+}
+
+// AP-Modi: verbundene WLAN-Geraete mit Signal und (bei AP-NAT) vergebener IP
+String wifiClientsJson() {
+  wifi_sta_list_t list{};
+  if (esp_wifi_ap_get_sta_list(&list) != ESP_OK) return "[]";
+  esp_netif_pair_mac_ip_t pairs[ESP_WIFI_MAX_CONN_NUM] = {};
+  const int count = list.num < ESP_WIFI_MAX_CONN_NUM ? list.num : ESP_WIFI_MAX_CONN_NUM;
+  for (int i = 0; i < count; ++i) memcpy(pairs[i].mac, list.sta[i].mac, 6);
+  const bool haveIps = bridgeMode == MODE_AP_NAT && count > 0 && esp_netif_dhcps_get_clients_by_mac(WiFi.AP.netif(), count, pairs) == ESP_OK;
+  String json = "[";
+  for (int i = 0; i < count; ++i) {
+    if (i) json += ',';
+    json += "{\"mac\":\"" + macToString(list.sta[i].mac) + "\",\"rssi\":" + String(list.sta[i].rssi) + ",\"ip\":\"" + (haveIps && pairs[i].ip.addr ? IPAddress(pairs[i].ip.addr).toString() : String("")) + "\"}";
+  }
+  return json + "]";
+}
+
 void showStatus() {
+  detectLanguage();  // fuer den Text zum Verbindungsfehler
   const bool hasRouterIp = bridgeMode == MODE_NAT && wifiConnected;
-  const String json = "{\"version\":\"" + String(FIRMWARE_VERSION) + "\",\"mode\":\"" + String(bridgeMode == MODE_BRIDGE ? "bridge" : "nat") + "\",\"wifi\":" + String(wifiConnected ? "true" : "false") + ",\"ssid\":\"" + jsonEscape(WiFi.SSID()) + "\",\"ip\":\"" + (hasRouterIp ? WiFi.localIP().toString() : String("")) + "\",\"rssi\":" + String(wifiConnected ? WiFi.RSSI() : 0) + ",\"percent\":" + String(wifiPercent()) + ",\"quality\":\"" + signalClass(wifiPercent()) + "\",\"ethLink\":" + String(ethernetLinkUp ? "true" : "false") + ",\"dhcp\":" + String(ethernetLanReady ? "true" : "false") + ",\"apOpen\":" + String(setupApPassword.isEmpty() ? "true" : "false") + ",\"lan\":" + lanStatusJson() + "}";
+  String json = "{\"version\":\"" + String(FIRMWARE_VERSION) + "\",\"mode\":\"" + modeKey() + "\",\"wifi\":" + String(wifiConnected ? "true" : "false") + ",\"ssid\":\"" + jsonEscape(WiFi.SSID()) + "\",\"ip\":\"" + (hasRouterIp ? WiFi.localIP().toString() : String("")) + "\",\"rssi\":" + String(wifiConnected ? WiFi.RSSI() : 0) + ",\"percent\":" + String(wifiPercent()) + ",\"quality\":\"" + signalClass(wifiPercent()) + "\",\"ethLink\":" + String(ethernetLinkUp ? "true" : "false") + ",\"dhcp\":" + String(ethernetLanReady ? "true" : "false") + ",\"apOpen\":" + String(setupApPassword.isEmpty() ? "true" : "false");
+  if (!isApMode() && !wifiConnected && !routerSsid.isEmpty()) {
+    const int32_t wait = nextConnectAttemptMs ? static_cast<int32_t>(nextConnectAttemptMs - millis()) : 0;
+    json += ",\"staReason\":\"" + jsonEscape(staReasonText()) + "\",\"nextTry\":" + String(wait > 0 ? wait / 1000 : 0);
+  }
+  if (isApMode()) {
+    esp_netif_ip_info_t ip{};
+    const bool haveIp = ethernetNetif != nullptr && esp_netif_get_ip_info(ethernetNetif, &ip) == ESP_OK && ip.ip.addr != 0;
+    json += ",\"uplink\":{\"ip\":\"" + (haveIp ? IPAddress(ip.ip.addr).toString() : String("")) + "\",\"gw\":\"" + (haveIp ? IPAddress(ip.gw.addr).toString() : String("")) + "\"}";
+    json += ",\"wifiClients\":" + wifiClientsJson();
+  }
+  json += ",\"fw\":" + firewallStatusJson();
+  json += ",\"lan\":" + lanStatusJson() + "}";
   webServer.send(200, "application/json", json);
 }
 
@@ -447,7 +829,7 @@ void showStatus() {
 void resumeRouterConnection() {
   if (!scanPausedConnect) return;
   scanPausedConnect = false;
-  WiFi.setAutoReconnect(true);
+  resetReconnect();
   connectToRouter();
 }
 
@@ -525,20 +907,25 @@ const char *const JS_TEXT_DE = "var L={notConnected:'Nicht mit dem Router verbun
   "addr:'Adressvergabe',byRouter:'direkt durch den Router',appears:'Ger\\u00e4t erscheint im Router als MAC',toWifi:'Frames LAN \\u2192 WLAN',toLan:'Frames WLAN \\u2192 LAN',"
   "dropped:'Verworfen',gw:'Gateway / DNS',lease:'Lease-Dauer',bridgeMac:'MAC der Bridge (LAN)',searching:'Suche nach WLANs ...',"
   "scanFail:'Die WLAN-Suche ist fehlgeschlagen. Bitte erneut versuchen.',none:'Keine WLANs gefunden.',hidden:'(verstecktes WLAN)',secured:' (gesichert)',"
-  "selected:'Ausgew\\u00e4hlt: ',mismatch:'Die beiden Eingaben stimmen nicht \\u00fcberein.',confirmPw:'Passwort \\u00e4ndern? Die Bridge startet danach neu.'};";
+  "selected:'Ausgew\\u00e4hlt: ',mismatch:'Die beiden Eingaben stimmen nicht \\u00fcberein.',confirmPw:'Passwort \\u00e4ndern? Die Bridge startet danach neu.',noUplink:'Kein Kabel erkannt. Verbinde den LAN-Port mit deinem Router.',homeIp:'IP der Bridge im Heimnetz',gateway:'Gateway',waitingIp:'wartet auf Adresse vom Router',noClients:'Noch keine WLAN-Ger\\u00e4te verbunden.',ackNeeded:'Bitte best\\u00e4tige den Hinweis zum Webinterface.',add:'zur Liste',pwNeeded:'Bitte ein WLAN-Passwort f\\u00fcr den Access Point festlegen (mindestens 8 Zeichen).',nextTry:'n\\u00e4chster Versuch in'};";
 const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router',noCable:'No cable detected. Plug the cable firmly into the device and the bridge.',"
   "link:'Link',full:'full duplex',half:'half duplex',since:'Cable connected for',device:'Device',notDetected:'not detected yet (not sending anything)',"
   "noLease:'none assigned via DHCP yet',ip:'IP address',unknown:'not known yet',mac:'MAC address',seen:'Detected',assigned:'Address assigned',ago:' ago',"
   "addr:'Address assignment',byRouter:'directly by the router',appears:'Device appears in the router with MAC',toWifi:'Frames LAN \\u2192 WiFi',toLan:'Frames WiFi \\u2192 LAN',"
   "dropped:'Dropped',gw:'Gateway / DNS',lease:'Lease time',bridgeMac:'Bridge MAC (LAN)',searching:'Searching for WiFi networks ...',"
   "scanFail:'The WiFi scan failed. Please try again.',none:'No WiFi networks found.',hidden:'(hidden network)',secured:' (secured)',"
-  "selected:'Selected: ',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.'};";
+  "selected:'Selected: ',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.',noUplink:'No cable detected. Connect the LAN port to your router.',homeIp:'Bridge IP in the home network',gateway:'Gateway',waitingIp:'waiting for an address from the router',noClients:'No WiFi devices connected yet.',ackNeeded:'Please confirm the note about the web interface.',add:'add to list',pwNeeded:'Please set a WiFi password for the access point (at least 8 characters).',nextTry:'next attempt in'};";
 
 void showHome() {
   detectLanguage();
   const bool bridge = bridgeMode == MODE_BRIDGE;
+  const bool apNat = bridgeMode == MODE_AP_NAT;
+  const bool apMode = isApMode();
+
   String routerState;
-  if (!wifiConnected) {
+  if (apMode) {
+    routerState = "";
+  } else if (!wifiConnected) {
     routerState = String("<p class='wait'>") + T("Noch nicht mit dem Router verbunden. Speichere die Zugangsdaten unten; die Bridge versucht die Verbindung automatisch.", "Not connected to the router yet. Save the credentials below; the bridge will connect automatically.") + "</p>";
   } else if (bridge) {
     routerState = String("<p class='ok'>") + T("Mit Router verbunden: ", "Connected to router: ") + "<b>" + htmlEscape(WiFi.SSID()) + "</b></p>";
@@ -547,7 +934,15 @@ void showHome() {
   }
 
   String ethernetState;
-  if (bridge) {
+  if (apNat) {
+    ethernetState = String("<p class='ok'>") + T("Access Point mit NAT: Das WLAN ", "Access point with NAT: the WiFi ") + "<b>" + htmlEscape(apSsid) + "</b> " +
+      T("ist aktiv. WLAN-Ger&auml;te bekommen Adressen im Netz <b>192.168.4.x</b>; ins Heimnetz geht es &uuml;ber das LAN-Kabel. Dieses Webinterface ist auch &uuml;ber die IP der Bridge im Heimnetz erreichbar.",
+        "is active. WiFi devices get addresses in the <b>192.168.4.x</b> network; the connection to the home network runs over the LAN cable. This web interface is also reachable via the bridge IP in the home network.") + "</p>";
+  } else if (bridgeMode == MODE_AP_BRIDGE) {
+    ethernetState = String("<p class='ok'>") + T("Access Point als Bridge aktiv: Das WLAN ", "Access point bridge active: the WiFi ") + "<b>" + htmlEscape(apSsid) + "</b> " +
+      T("geh&ouml;rt direkt zu deinem Heimnetz. Dieses Webinterface erreichst du &uuml;ber die IP der Bridge (siehe &bdquo;Uplink&ldquo;) oder ", "is part of your home network. You reach this web interface via the bridge IP (see \"Uplink\") or ") +
+      "<b>http://" + BRIDGE_HOSTNAME + ".fritz.box</b>.</p>";
+  } else if (bridge) {
     ethernetState = ethernetLanReady
       ? String("<p class='ok'>") + T("Bridge-Modus aktiv. Das LAN-Ger&auml;t bekommt seine Adresse direkt vom Router.", "Bridge mode active. The LAN device gets its address directly from the router.") + "</p>"
       : String("<p class='bad'>") + T("Die Ethernet-Bridge ist noch nicht bereit.", "The Ethernet bridge is not ready yet.") + "</p>";
@@ -556,15 +951,19 @@ void showHome() {
       ? String("<p class='ok'>") + T("NAT-Modus: Ethernet-DHCP ist aktiv. Das angeschlossene Ger&auml;t bekommt automatisch eine Adresse im Netz <b>192.168.50.x</b>; Gateway ist <b>192.168.50.1</b>.", "NAT mode: Ethernet DHCP is active. The connected device automatically gets an address in the <b>192.168.50.x</b> network; the gateway is <b>192.168.50.1</b>.") + "</p>"
       : String("<p class='bad'>") + T("Der Ethernet-DHCP-Dienst ist noch nicht bereit.", "The Ethernet DHCP service is not ready yet.") + "</p>";
   }
-  const String linkState = String("<div class='status'><b>") + T("Ger&auml;t am LAN-Port", "Device on the LAN port") + "</b><div id='lanInfo'>" + T("Wird geladen...", "Loading...") + "</div></div>";
+  String linkState = String("<div class='status'><b>") + (apMode ? T("Uplink zum Router (LAN-Port)", "Uplink to the router (LAN port)") : T("Ger&auml;t am LAN-Port", "Device on the LAN port")) +
+    "</b><div id='lanInfo'>" + T("Wird geladen...", "Loading...") + "</div></div>";
+  if (apMode) {
+    linkState += String("<div class='status'><b>") + T("WLAN-Ger&auml;te", "WiFi devices") + "</b><div id='apClients'>" + T("Wird geladen...", "Loading...") + "</div></div>";
+  }
 
   const String script = String("<script>") + (uiEnglish ? JS_TEXT_EN : JS_TEXT_DE) +
-    "function status(){fetch('/status').then(r=>r.json()).then(s=>{let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected;showLan(s);});}"
+    "function status(){fetch('/status').then(r=>r.json()).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);showClients(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{h+=row(w.ip||w.mac,(w.ip?w.mac+', ':'')+w.rssi+' dBm');});c.innerHTML='<table class=\\'info\\'>'+h+'</table>';}"
     "function dur(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return (h?h+' h ':'')+(h||m?m+' min ':'')+x+' s';}"
     "function row(k,v){return '<tr><td>'+k+'</td><td><b>'+v+'</b></td></tr>';}"
-    "function showLan(s){let l=s.lan,br=s.mode=='bridge',box=document.getElementById('lanInfo'),h='';"
-    "if(!s.ethLink){box.innerHTML='<p class=\\'wait\\'>'+L.noCable+'</p>';return;}"
-    "h+=row(L.link,l.speed+' Mbit/s, '+(l.fullDuplex?L.full:L.half));h+=row(L.since,dur(l.linkSeconds));"
+    "function showLan(s){let l=s.lan,br=s.mode=='bridge',ap=!!s.uplink,box=document.getElementById('lanInfo'),h='';"
+    "if(!s.ethLink){box.innerHTML='<p class=\\'wait\\'>'+(ap?L.noUplink:L.noCable)+'</p>';return;}"
+    "h+=row(L.link,l.speed+' Mbit/s, '+(l.fullDuplex?L.full:L.half));h+=row(L.since,dur(l.linkSeconds));if(ap){h+=row(L.homeIp,s.uplink.ip||L.waitingIp);if(s.uplink.gw)h+=row(L.gateway,s.uplink.gw);box.innerHTML='<table class=\\'info\\'>'+h+'</table>';return;}"
     "if(!l.clients.length){h+=row(br?L.device:L.ip,br?L.notDetected:L.noLease);}"
     "l.clients.forEach((c,i)=>{let p=l.clients.length>1?' ('+(i+1)+')':'';h+=row(L.ip+p,c.ip||L.unknown);h+=row(L.mac+p,c.mac);h+=row((br?L.seen:L.assigned)+p,dur(c.seconds)+L.ago);});"
     "if(br){h+=row(L.addr,L.byRouter);if(l.staMac)h+=row(L.appears,l.staMac);h+=row(L.toWifi,l.toWifi);h+=row(L.toLan,l.toLan);h+=row(L.dropped,l.dropped);}"
@@ -581,63 +980,124 @@ void showHome() {
     "b.onclick=()=>{document.querySelector('[name=ssid]').value=n.ssid;box.textContent=L.selected+n.ssid;};box.appendChild(b);});}"
     "status();setInterval(status,2000);</script>";
 
-  // Piktogramme: NAT = ein Knoten verteilt auf mehrere Geraete, Bridge = Bruecke direkt ins Heimnetz
-  const char *natIcon = "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"
-    "<rect x='9' y='2' width='6' height='5' rx='1'/><path d='M12 7v4M5 11h14M5 11v4M12 11v4M19 11v4'/>"
+  // Piktogramme
+  const char *svgStart = "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>";
+  const String natIcon = String(svgStart) + "<rect x='9' y='2' width='6' height='5' rx='1'/><path d='M12 7v4M5 11h14M5 11v4M12 11v4M19 11v4'/>"
     "<rect x='2.5' y='15' width='5' height='5' rx='1'/><rect x='9.5' y='15' width='5' height='5' rx='1'/><rect x='16.5' y='15' width='5' height='5' rx='1'/></svg>";
-  const char *bridgeIcon = "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"
-    "<path d='M3 15Q12 3 21 15'/><path d='M2 15h20M7.5 10.5V15M12 9v6M16.5 10.5V15M4 15v5M20 15v5'/></svg>";
+  const String bridgeIcon = String(svgStart) + "<path d='M3 15Q12 3 21 15'/><path d='M2 15h20M7.5 10.5V15M12 9v6M16.5 10.5V15M4 15v5M20 15v5'/></svg>";
+  const String apNatIcon = String(svgStart) + "<path d='M3 9.5a13 13 0 0 1 18 0M6 12.8a8.5 8.5 0 0 1 12 0M9 16a4 4 0 0 1 6 0'/><circle cx='12' cy='19.5' r='1.3' fill='currentColor'/></svg>";
+  const String apBridgeIcon = String(svgStart) + "<path d='M7 6a7 7 0 0 1 10 0M9.3 8.6a3.6 3.6 0 0 1 5.4 0'/><circle cx='12' cy='11' r='1.1' fill='currentColor'/>"
+    "<path d='M3 21Q12 12 21 21'/><path d='M2 21h20M7.5 17.4V21M12 16.5V21M16.5 17.4V21'/></svg>";
 
-  const String modeForm = String("<h2>") + T("Betriebsart", "Operating mode") + "</h2><form method='post' action='/mode'>"
-    "<label class='mode'><input type='radio' name='mode' value='nat'" + (bridge ? "" : " checked") + ">" + natIcon +
-    "<span><b>" + T("NAT &ndash; eigenes Netzwerk", "NAT &ndash; own network") + "</b><p>" +
-    T("Die Bridge baut am LAN-Port ein eigenes Netz (192.168.50.x) auf und vergibt die Adressen selbst. Ideal, wenn mehrere Ger&auml;te &uuml;ber einen Switch angeschlossen werden sollen.",
-      "The bridge creates its own network (192.168.50.x) on the LAN port and assigns the addresses itself. Ideal if you want to connect several devices through a switch.") +
-    "</p><span class='badge slow'>" + T("Datenrate bis ca. 10 Mbit/s", "Data rate up to approx. 10 Mbit/s") + "</span></span></label>"
-    "<label class='mode'><input type='radio' name='mode' value='bridge'" + (bridge ? " checked" : "") + ">" + bridgeIcon +
-    "<span><b>" + T("Bridge &ndash; direkt ins Heimnetz", "Bridge &ndash; straight into your home network") + "</b><p>" +
-    T("Das angeschlossene Ger&auml;t erh&auml;lt seine IP-Adresse direkt vom Router und ist im Heimnetz wie jedes andere Ger&auml;t erreichbar. F&uuml;r genau ein Ger&auml;t, nur IPv4.",
-      "The connected device gets its IP address directly from your router and is reachable in your home network like any other device. For exactly one device, IPv4 only.") +
-    "</p><span class='badge fast'>" + T("Datenrate &uuml;ber 30 Mbit/s", "Data rate above 30 Mbit/s") + "</span></span></label>"
+  auto modeCard = [&](const char *value, BridgeMode mode, const String &icon, const char *title, const char *text, const String &badges) {
+    return String("<label class='mode'><input type='radio' name='mode' value='") + value + "'" + (bridgeMode == mode ? " checked" : "") + ">" + icon +
+      "<span><b>" + title + "</b><p>" + text + "</p>" + badges + "</span></label>";
+  };
+
+  const String apBridgeWarning = String("<div class='dangerbox'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M12 3L2 21h20L12 3z'/><path d='M12 10v5M12 18v.5'/></svg><div><b>") +
+    T("Achtung: Webinterface nicht mehr unter 192.168.4.1!", "Warning: web interface no longer at 192.168.4.1!") + "</b><br>" +
+    T("In dieser Betriebsart holt sich die Bridge ihre Adresse vom Router. Das Webinterface erreichst du dann &uuml;ber diese Adresse &ndash; aus dem Heimnetz und aus dem WLAN der Bridge: <b>http://" ,
+      "In this mode the bridge gets its address from your router. You then reach the web interface via this address &ndash; from your home network and from the bridge's WiFi: <b>http://") +
+      BRIDGE_HOSTNAME + T(".fritz.box</b> (bei einer FRITZ!Box) oder die IP, die dein Router f&uuml;r &bdquo;" , ".fritz.box</b> (with a FRITZ!Box) or the IP your router shows for \"") + BRIDGE_HOSTNAME +
+      T("&ldquo; anzeigt.", "\".") + "<br>" +
+    T("<b>Zur&uuml;ck zur Einrichtung:</b> die Stromversorgung <b>3-mal hintereinander</b> kurz aus- und wieder einschalten (jeweils innerhalb von 10 Sekunden). Danach startet die Bridge im NAT-Modus mit dem Einrichtungs-WLAN.",
+      "<b>Back to setup:</b> switch the power off and on again <b>3 times in a row</b> (each within 10 seconds). The bridge then starts in NAT mode with the setup WiFi.") +
+    "<label class='ack'><input type='checkbox' name='ack' value='1'>" + T("Verstanden: Das Webinterface finde ich danach &uuml;ber die IP vom Router.", "Understood: afterwards I will find the web interface via the IP from the router.") + "</label></div></div>";
+
+  // WLAN-Name und Passwort direkt bei den Access-Point-Karten (nur sichtbar, wenn eine davon gewaehlt ist)
+  const bool apHasPassword = !setupApPassword.isEmpty();
+  const String apFields = String("<div class='apfields'><b>") + T("WLAN des Access Points", "Access point WiFi") + "</b>"
+    "<label>" + T("WLAN-Name", "WiFi name") + "<input name='m_ssid' maxlength='32' value='" + htmlEscape(apSsid) + "'></label>"
+    "<label class='chk'><input type='checkbox' name='m_open' value='1'" + (apOpenChosen ? " checked" : "") + "><span><b>" + T("Offenes WLAN ohne Passwort", "Open WiFi without password") + "</b><small>" +
+      T("Nur f&uuml;r besondere F&auml;lle, z. B. ein G&auml;ste-WLAN mit aktiver Firewall.", "Only for special cases, e.g. a guest WiFi with the firewall enabled.") + "</small></span></label>" + openWifiWarningHtml() +
+    "<div class='pwfields'><label>" + T("Passwort", "Password") + "<input name='m_pass' type='password' minlength='8' maxlength='63' autocomplete='new-password' placeholder='" +
+      (apHasPassword ? T("Leer lassen, um das bisherige zu behalten", "Leave empty to keep the current one") : T("mindestens 8 Zeichen", "at least 8 characters")) + "'></label>"
+    "<label>" + T("Passwort wiederholen", "Repeat password") + "<input name='m_repeat' type='password' minlength='8' maxlength='63' autocomplete='new-password'></label></div>"
+    "<p><small>" + T("Mit diesem Namen und Passwort verbinden sich deine Ger&auml;te. Es ist dasselbe WLAN wie unten unter &bdquo;Einrichtungs-WLAN&ldquo;.",
+                     "Your devices connect with this name and password. It is the same WiFi as below under \"Setup WiFi\".") + "</small></p></div>";
+
+  const String modeForm = String("<h2>") + T("Betriebsart", "Operating mode") + "</h2>"
+    "<form method='post' action='/mode' onsubmit=\"var m=this.querySelector('input[name=mode]:checked');if(!m)return true;"
+    "if(m.value.indexOf('ap')==0&&!this.m_open.checked){if(this.m_pass.value!=this.m_repeat.value){alert(L.mismatch);return false;}" + (apHasPassword ? "" : "if(!this.m_pass.value){alert(L.pwNeeded);return false;}") + "}"
+    "if(m.value=='apbridge'&&!this.ack.checked){alert(L.ackNeeded);return false;}return true;\">"
+    "<p class='group'>" + T("WLAN-Client: Ger&auml;t am LAN-Port, Bridge im WLAN deines Routers", "WiFi client: device on the LAN port, bridge joins your router's WiFi") + "</p>" +
+    modeCard("nat", MODE_NAT, natIcon, T("NAT &ndash; eigenes Netzwerk", "NAT &ndash; own network"),
+      T("Die Bridge baut am LAN-Port ein eigenes Netz (192.168.50.x) auf und vergibt die Adressen selbst. Ideal, wenn mehrere Ger&auml;te &uuml;ber einen Switch angeschlossen werden sollen.",
+        "The bridge creates its own network (192.168.50.x) on the LAN port and assigns the addresses itself. Ideal if you want to connect several devices through a switch."),
+      String("<span class='badge slow'>") + T("Datenrate bis ca. 10 Mbit/s", "Data rate up to approx. 10 Mbit/s") + "</span>") +
+    modeCard("bridge", MODE_BRIDGE, bridgeIcon, T("Bridge &ndash; direkt ins Heimnetz", "Bridge &ndash; straight into your home network"),
+      T("Das angeschlossene Ger&auml;t erh&auml;lt seine IP-Adresse direkt vom Router und ist im Heimnetz wie jedes andere Ger&auml;t erreichbar. F&uuml;r genau ein Ger&auml;t, nur IPv4.",
+        "The connected device gets its IP address directly from your router and is reachable in your home network like any other device. For exactly one device, IPv4 only."),
+      String("<span class='badge fast'>") + T("Datenrate &uuml;ber 30 Mbit/s", "Data rate above 30 Mbit/s") + "</span>") +
+    "<p class='group'>" + T("Access Point: LAN-Port am Router, die Bridge spannt ein eigenes WLAN auf", "Access point: LAN port to your router, the bridge creates its own WiFi") + "</p>" +
+    modeCard("apnat", MODE_AP_NAT, apNatIcon, T("Access Point &ndash; eigenes WLAN-Netz (NAT)", "Access point &ndash; own WiFi network (NAT)"),
+      T("Der LAN-Port wird mit dem Router verbunden. Die Bridge spannt ein eigenes WLAN auf (Name und Passwort direkt hier festlegen) und gibt den WLAN-Ger&auml;ten Adressen im Netz 192.168.4.x. Das Webinterface bleibt erreichbar.",
+        "Connect the LAN port to your router. The bridge creates its own WiFi (set name and password right here) and gives WiFi devices addresses in the 192.168.4.x network. The web interface stays reachable."),
+      String("<span class='badge fast'>") + T("Webinterface bleibt erreichbar", "Web interface stays reachable") + "</span> <span class='badge slow'>" + T("bis ca. 8 WLAN-Ger&auml;te, nur 2,4 GHz", "up to approx. 8 WiFi devices, 2.4 GHz only") + "</span>") +
+    modeCard("apbridge", MODE_AP_BRIDGE, apBridgeIcon, T("Access Point &ndash; WLAN direkt im Heimnetz (Bridge)", "Access point &ndash; WiFi straight into your home network (bridge)"),
+      T("Der LAN-Port wird mit dem Router verbunden. WLAN-Ger&auml;te bekommen ihre Adressen direkt vom Router und sind im Heimnetz sichtbar (AirPlay, Chromecast, Drucker).",
+        "Connect the LAN port to your router. WiFi devices get their addresses directly from your router and are visible in your home network (AirPlay, Chromecast, printers)."),
+      String("<span class='badge slow'>") + T("Webinterface &uuml;ber die IP vom Router", "Web interface via the IP from the router") + "</span> <span class='badge slow'>" + T("bis ca. 8 WLAN-Ger&auml;te, nur 2,4 GHz", "up to approx. 8 WiFi devices, 2.4 GHz only") + "</span>") +
+    apFields + apBridgeWarning +
     "<button type='submit'>" + T("&Uuml;bernehmen und neu starten", "Apply and restart") + "</button></form>";
 
   const bool apOpen = setupApPassword.isEmpty();
   const bool defaultApPassword = !apOpen && setupApPassword == SETUP_AP_PASSWORD;
   String apState;
-  if (apOpen) apState = String("<p class='bad'>") + T("<b>Kein Passwort gesetzt.</b> Das Einrichtungs-WLAN ist offen. Lege jetzt ein Passwort fest.", "<b>No password set.</b> The setup WiFi is open. Set a password now.") + "</p>";
+  if (apOpen && apOpenChosen) apState = String("<p class='bad'>") + T("<b>Offenes WLAN (bewusst gew&auml;hlt).</b> Kein Passwort, keine Verschl&uuml;sselung.", "<b>Open WiFi (chosen deliberately).</b> No password, no encryption.") + "</p>";
+  else if (apOpen) apState = String("<p class='bad'>") + T("<b>Kein Passwort gesetzt.</b> Das WLAN ist offen. Lege jetzt ein Passwort fest.", "<b>No password set.</b> The WiFi is open. Set a password now.") + "</p>";
   else if (defaultApPassword) apState = String("<p class='bad'>") + T("Es ist noch das Standard-Passwort aktiv. Da es &ouml;ffentlich bekannt ist, solltest du es jetzt &auml;ndern.", "The default password is still active. As it is publicly known, you should change it now.") + "</p>";
   else apState = String("<p class='ok'>") + T("Ein eigenes Passwort ist gesetzt.", "A custom password is set.") + "</p>";
-  const String apForm = String("<h2 id='ap'>") + T("Einrichtungs-WLAN", "Setup WiFi") + "</h2><div class='" + (apOpen ? "apbox open" : "apbox") + "'><p>Name: <b>" + SETUP_AP_SSID + "</b></p>" + apState +
-    "<form method='post' action='/appass' onsubmit=\"if(this.ap_new.value!=this.ap_repeat.value){alert(L.mismatch);return false;}return confirm(L.confirmPw);\">"
-    "<label>" + T("Neues Passwort", "New password") + "<input name='ap_new' type='password' minlength='8' maxlength='63' autocomplete='new-password' required></label>"
-    "<label>" + T("Neues Passwort wiederholen", "Repeat new password") + "<input name='ap_repeat' type='password' minlength='8' maxlength='63' autocomplete='new-password' required></label>"
-    "<p><small>" + T("8 bis 63 Zeichen, keine Umlaute. Nach dem Speichern startet die Bridge neu; danach mit dem neuen Passwort verbinden.", "8 to 63 characters, ASCII only. The bridge restarts after saving; then reconnect with the new password.") + "</small></p>"
-    "<button type='submit'>" + (apOpen ? T("Passwort festlegen", "Set password") : T("Passwort &auml;ndern", "Change password")) + "</button></form></div>";
+  const String apForm = String("<h2 id='ap'>") + (apMode ? T("WLAN (Access Point)", "WiFi (access point)") : T("Einrichtungs-WLAN", "Setup WiFi")) + "</h2><div class='" + (apOpen ? "apbox open" : "apbox") + "'>" + apState +
+    "<p><small>" + T("Name und Passwort gelten f&uuml;r das Einrichtungs-WLAN und in den Access-Point-Betriebsarten f&uuml;r dein WLAN.", "Name and password apply to the setup WiFi and, in the access point modes, to your WiFi.") + "</small></p>"
+    "<form method='post' action='/appass' onsubmit=\"if(!this.ap_open.checked){if(this.ap_new.value!=this.ap_repeat.value){alert(L.mismatch);return false;}" + (apOpen ? "if(!this.ap_new.value){alert(L.pwNeeded);return false;}" : "") + "}return confirm(L.confirmPw);\">"
+    "<label>" + T("WLAN-Name", "WiFi name") + "<input name='ap_ssid' maxlength='32' value='" + htmlEscape(apSsid) + "' required></label>"
+    "<label class='chk'><input type='checkbox' name='ap_open' value='1'" + (apOpenChosen ? " checked" : "") + "><span><b>" + T("Offenes WLAN ohne Passwort", "Open WiFi without password") + "</b><small>" +
+      T("Nur f&uuml;r besondere F&auml;lle, z. B. ein G&auml;ste-WLAN mit aktiver Firewall.", "Only for special cases, e.g. a guest WiFi with the firewall enabled.") + "</small></span></label>" + openWifiWarningHtml() +
+    "<div class='pwfields'><label>" + T("Neues Passwort", "New password") + "<input name='ap_new' type='password' minlength='8' maxlength='63' autocomplete='new-password' placeholder='" + (apOpen ? "" : T("Leer lassen, um es zu behalten", "Leave empty to keep it")) + "'></label>"
+    "<label>" + T("Neues Passwort wiederholen", "Repeat new password") + "<input name='ap_repeat' type='password' minlength='8' maxlength='63' autocomplete='new-password'></label></div>"
+    "<p class='pwfields'><small>" + T("8 bis 63 Zeichen, keine Umlaute. Nach dem Speichern startet die Bridge neu; danach mit dem neuen Namen bzw. Passwort verbinden.", "8 to 63 characters, ASCII only. The bridge restarts after saving; then reconnect with the new name or password.") + "</small></p>"
+    "<button type='submit'>" + (apOpen && !apOpenChosen ? T("Passwort festlegen", "Set password") : T("Speichern", "Save")) + "</button></form></div>";
 
-  // Auffaelliger Warnhinweis ganz oben, solange das Einrichtungs-WLAN offen ist
+  // Auffaelliger Warnhinweis ganz oben, solange das WLAN offen ist
   String apAlert;
-  if (apOpen) {
+  if (apOpen && apOpenChosen) {
+    // Bewusst offen: dauerhaft sichtbarer, aber ruhiger Hinweis
+    apAlert = String("<div class='alert static'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M12 3L2 21h20L12 3z'/><path d='M12 10v5M12 18v.5'/></svg><div><b>") +
+      T("Offenes WLAN aktiv", "Open WiFi active") + "</b><br>" + T("Das WLAN", "The WiFi") + " <b>" + htmlEscape(apSsid) + "</b> " +
+      T("hat kein Passwort und ist unverschl&uuml;sselt. Jeder in Reichweite kann es nutzen.", "has no password and is unencrypted. Anyone in range can use it.") + "<br><a href='#ap'>" +
+      T("Passwort festlegen &darr;", "Set a password &darr;") + "</a></div></div>";
+  } else if (apOpen) {
     apAlert = String("<div class='alert'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M12 3L2 21h20L12 3z'/><path d='M12 10v5M12 18v.5'/></svg><div><b>") +
       T("Kein WLAN-Passwort gesetzt!", "No WiFi password set!") + "</b><br>" +
-      T("Das Einrichtungs-WLAN", "The setup WiFi") + " <b>" + SETUP_AP_SSID + "</b> " +
+      T("Das WLAN", "The WiFi") + " <b>" + htmlEscape(apSsid) + "</b> " +
       T("ist offen. Jeder in Reichweite kann diese Seite &ouml;ffnen und die Einstellungen &auml;ndern.", "is open. Anyone in range can open this page and change the settings.") + "<br><a href='#ap'>" +
       T("Jetzt Passwort festlegen &darr;", "Set a password now &darr;") + "</a></div></div>";
   }
+  if (recoveryTriggered) {
+    apAlert += String("<p class='bad'><b>") + T("Notfall-Reset ausgef&uuml;hrt:", "Emergency reset performed:") + "</b> " + T("Die Betriebsart wurde auf NAT zur&uuml;ckgesetzt.", "The operating mode was reset to NAT.") + "</p>";
+  }
 
-  const String footer = String("<p><small>") + (bridge
-    ? T("Im Bridge-Modus reicht die Bridge die Daten direkt zum Router durch. Sie selbst hat im Router-Netz keine eigene Adresse; diese Seite ist nur &uuml;ber das Einrichtungs-WLAN erreichbar.",
-        "In bridge mode the bridge passes the data straight to the router. It has no address of its own in the router network; this page is only reachable through the setup WiFi.")
-    : T("Das Ethernet-Ger&auml;t bekommt Adresse, Gateway und DNS von der Bridge. Die Bridge &uuml;bersetzt die Verbindung zum Router.",
-        "The Ethernet device gets its address, gateway and DNS from the bridge. The bridge translates the connection to the router.")) + "</small></p>";
+  String footer;
+  if (apNat) footer = T("Im Access-Point-Modus mit NAT leitet die Bridge den Verkehr der WLAN-Ger&auml;te &uuml;ber das LAN-Kabel zum Router.", "In access point mode with NAT the bridge routes the traffic of the WiFi devices over the LAN cable to the router.");
+  else if (bridge) footer = T("Im Bridge-Modus reicht die Bridge die Daten direkt zum Router durch. Sie selbst hat im Router-Netz keine eigene Adresse; diese Seite ist nur &uuml;ber das Einrichtungs-WLAN erreichbar.",
+        "In bridge mode the bridge passes the data straight to the router. It has no address of its own in the router network; this page is only reachable through the setup WiFi.");
+  else if (!apMode) footer = T("Das Ethernet-Ger&auml;t bekommt Adresse, Gateway und DNS von der Bridge. Die Bridge &uuml;bersetzt die Verbindung zum Router.",
+        "The Ethernet device gets its address, gateway and DNS from the bridge. The bridge translates the connection to the router.");
+  footer = "<p><small>" + footer + "</small></p>";
+
+  String routerSection;
+  if (!apMode) {
+    routerSection = String("<h2>") + T("Router-WLAN", "Router WiFi") + "</h2><button class='secondary' type='button' onclick='scan()'>" + T("Verf&uuml;gbare WLANs suchen", "Search for WiFi networks") + "</button><div id='networks'></div>"
+      "<form method='post' action='/save'><label>" + T("WLAN-Name des Routers", "Router WiFi name") + "<input name='ssid' maxlength='32' value='" + htmlEscape(routerSsid) + "' required></label>"
+      "<label>" + T("WLAN-Passwort des Routers", "Router WiFi password") + "<input name='password' type='password' maxlength='63' placeholder='" + T("Nur &auml;ndern, wenn n&ouml;tig", "Only change if needed") + "'></label>"
+      "<button type='submit'>" + T("Speichern und verbinden", "Save and connect") + "</button></form>";
+  }
 
   const String html = pageHeader(T("WT32 Ethernet-WLAN-Bridge", "WT32 Ethernet WiFi Bridge")) + languageSwitchHtml() +
-    "<h1>" + T("Ethernet-WLAN-Bridge", "Ethernet WiFi Bridge") + "</h1>" + apAlert + routerState + signalMeterHtml() + ethernetState + linkState +
-    "<p>" + T("Diese Seite bleibt &uuml;ber das Einrichtungs-WLAN erreichbar: ", "This page stays reachable through the setup WiFi: ") + "<b>192.168.4.1</b>.</p>"
-    "<h2>" + T("Router-WLAN", "Router WiFi") + "</h2><button class='secondary' type='button' onclick='scan()'>" + T("Verf&uuml;gbare WLANs suchen", "Search for WiFi networks") + "</button><div id='networks'></div>"
-    "<form method='post' action='/save'><label>" + T("WLAN-Name des Routers", "Router WiFi name") + "<input name='ssid' maxlength='32' value='" + htmlEscape(routerSsid) + "' required></label>"
-    "<label>" + T("WLAN-Passwort des Routers", "Router WiFi password") + "<input name='password' type='password' maxlength='63' placeholder='" + T("Nur &auml;ndern, wenn n&ouml;tig", "Only change if needed") + "'></label>"
-    "<button type='submit'>" + T("Speichern und verbinden", "Save and connect") + "</button></form>" +
-    modeForm + apForm + footer + "<p><small>" + T("Firmware-Version ", "Firmware version ") + FIRMWARE_VERSION + "</small></p>" + script + pageFooter();
+    "<h1>" + T("Ethernet-WLAN-Bridge", "Ethernet WiFi Bridge") + "</h1>" + apAlert + routerState + (apMode ? String("") : signalMeterHtml()) + ethernetState + linkState +
+    (bridgeMode == MODE_AP_BRIDGE ? String("") : String("<p>") + (apMode ? T("Diese Seite ist im WLAN erreichbar unter ", "This page is reachable in the WiFi at ") : T("Diese Seite bleibt &uuml;ber das Einrichtungs-WLAN erreichbar: ", "This page stays reachable through the setup WiFi: ")) + "<b>192.168.4.1</b>.</p>") +
+    routerSection + modeForm + firewallSectionHtml() + apForm + footer + "<p><small>" + T("Firmware-Version ", "Firmware version ") + FIRMWARE_VERSION + "</small></p>" + script + pageFooter();
   webServer.send(200, "text/html; charset=utf-8", html);
 }
 
@@ -645,12 +1105,88 @@ void connectToRouter() {
   if (routerSsid.isEmpty()) return;
   WiFi.disconnect(false, false);
   delay(100);
-  WiFi.begin(routerSsid.c_str(), routerPassword.c_str());
+  // Bekannter Kanal: nur dort suchen (kurz, stoert das Einrichtungs-WLAN kaum). Jeder dritte
+  // Fehlversuch sucht auf allen Kanaelen, falls der Router den Kanal gewechselt hat.
+  const bool useKnownChannel = routerChannel != 0 && (failedConnectAttempts % 3) != 2;
+  if (useKnownChannel) WiFi.begin(routerSsid.c_str(), routerPassword.c_str(), routerChannel, routerBssid);
+  else WiFi.begin(routerSsid.c_str(), routerPassword.c_str());
+  Serial.printf("Verbinde mit %s (%s)\n", routerSsid.c_str(), useKnownChannel ? "bekannter Kanal" : "alle Kanaele");
+}
+
+// Plant den naechsten Verbindungsversuch mit wachsendem Abstand (10 s, 20 s, 40 s ... max. 120 s)
+void scheduleReconnect() {
+  nextConnectAttemptMs = millis() + reconnectDelayMs;
+  if (nextConnectAttemptMs == 0) nextConnectAttemptMs = 1;
+  reconnectDelayMs = reconnectDelayMs * 2 > RECONNECT_MAX_MS ? RECONNECT_MAX_MS : reconnectDelayMs * 2;
+}
+
+void resetReconnect() {
+  reconnectDelayMs = RECONNECT_MIN_MS;
+  failedConnectAttempts = 0;
+  nextConnectAttemptMs = 0;
+}
+
+// Wird im loop() aufgerufen (Client-Betriebsarten)
+void handleRouterConnection() {
+  if (staGotConnected) {
+    staGotConnected = false;
+    resetReconnect();
+    uint8_t *bssid = WiFi.BSSID();
+    const uint8_t channel = WiFi.channel();
+    if (bssid != nullptr && channel != 0 && (channel != routerChannel || memcmp(bssid, routerBssid, 6) != 0)) {
+      routerChannel = channel;
+      memcpy(routerBssid, bssid, 6);
+      preferences.putUChar("r_chan", routerChannel);
+      preferences.putBytes("r_bssid", routerBssid, 6);
+    }
+  }
+  if (routerSsid.isEmpty() || wifiConnected || staLinkUp || scanPausedConnect) return;
+  if (nextConnectAttemptMs == 0) {
+    scheduleReconnect();
+    return;
+  }
+  if (static_cast<int32_t>(millis() - nextConnectAttemptMs) < 0) return;
+  ++failedConnectAttempts;
+  connectToRouter();
+  scheduleReconnect();
+}
+
+// Grund der letzten Trennung (fuer Log und Webinterface)
+void onStaDisconnectEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData) {
+  if (eventId == WIFI_EVENT_STA_DISCONNECTED) {
+    const wifi_event_sta_disconnected_t *info = static_cast<const wifi_event_sta_disconnected_t *>(eventData);
+    lastStaDisconnectReason = info->reason;
+    staLinkUp = false;
+  } else if (eventId == WIFI_EVENT_STA_CONNECTED) {
+    lastStaDisconnectReason = 0;
+    staLinkUp = true;
+    staGotConnected = true;
+  }
+}
+
+const char *staReasonText() {
+  switch (lastStaDisconnectReason) {
+    case 0: return "";
+    case WIFI_REASON_NO_AP_FOUND:
+      return T("Router-WLAN nicht gefunden (Name falsch, zu weit entfernt oder nur 5 GHz?)", "Router WiFi not found (wrong name, too far away or 5 GHz only?)");
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+      return T("Anmeldung fehlgeschlagen (Passwort falsch?)", "Authentication failed (wrong password?)");
+    default:
+      return T("Verbindung fehlgeschlagen", "Connection failed");
+  }
 }
 
 void saveSettings() {
   detectLanguage();
-  routerSsid = webServer.arg("ssid");
+  const String newSsid = webServer.arg("ssid");
+  if (newSsid != routerSsid) {
+    routerChannel = 0;  // anderes WLAN: auf allen Kanaelen suchen
+    preferences.putUChar("r_chan", 0);
+  }
+  resetReconnect();
+  routerSsid = newSsid;
   const String newPassword = webServer.arg("password");
   preferences.putString("ssid", routerSsid);
   if (!newPassword.isEmpty()) {
@@ -663,17 +1199,60 @@ void saveSettings() {
   connectToRouter();
 }
 
+void sendModeError(const String &message) {
+  webServer.send(400, "text/html; charset=utf-8", pageHeader(T("Fehler", "Error")) + "<h1>" + T("Betriebsart nicht ge&auml;ndert", "Operating mode not changed") + "</h1><p class='bad'>" + message + "</p><p><a href='/'>" + T("Zur&uuml;ck zur Startseite", "Back to the start page") + "</a></p>" + pageFooter());
+}
+
 void saveMode() {
   detectLanguage();
-  const BridgeMode newMode = webServer.arg("mode") == "bridge" ? MODE_BRIDGE : MODE_NAT;
+  const String value = webServer.arg("mode");
+  BridgeMode newMode = MODE_NAT;
+  if (value == "bridge") newMode = MODE_BRIDGE;
+  else if (value == "apnat") newMode = MODE_AP_NAT;
+  else if (value == "apbridge") newMode = MODE_AP_BRIDGE;
+  const bool newIsAp = newMode == MODE_AP_NAT || newMode == MODE_AP_BRIDGE;
+
+  if (newMode == MODE_AP_BRIDGE && webServer.arg("ack") != "1") {
+    sendModeError(T("Bitte best&auml;tige den Hinweis zum Webinterface.", "Please confirm the note about the web interface."));
+    return;
+  }
+  if (newIsAp) {
+    // WLAN-Name und Passwort kommen direkt aus dem Formular der Betriebsart
+    const bool openWifi = webServer.arg("m_open") == "1";
+    if (!openWifi && setupApPassword.isEmpty() && webServer.arg("m_pass").isEmpty()) {
+      sendModeError(T("F&uuml;r die Access-Point-Betriebsarten bitte ein WLAN-Passwort festlegen (mindestens 8 Zeichen).",
+                      "For the access point modes please set a WiFi password (at least 8 characters)."));
+      return;
+    }
+    String error;
+    if (!applyApCredentials(webServer.arg("m_ssid"), webServer.arg("m_pass"), webServer.arg("m_repeat"), error, openWifi)) {
+      sendModeError(error);
+      return;
+    }
+  }
+
   preferences.putUChar("mode", newMode);
-  const String name = newMode == MODE_BRIDGE ? "Bridge" : "NAT";
-  webServer.send(200, "text/html; charset=utf-8", pageHeader(T("Neustart", "Restart")) + "<h1>" + T("Neustart", "Restarting") + "</h1><p>" +
-    T("Betriebsart ", "Operating mode ") + "<b>" + name + "</b> " +
-    T("gespeichert. Die Bridge startet neu. Verbinde dich danach wieder mit dem WLAN ", "saved. The bridge is restarting. Afterwards, reconnect to the WiFi ") + "<b>" + SETUP_AP_SSID + "</b> " +
-    T("und &ouml;ffne", "and open") + " <a href='/'>192.168.4.1</a>.</p><p><small>" +
-    T("Ziehe am LAN-Ger&auml;t kurz das Kabel ab oder erneuere dort die IP-Adresse, damit es eine Adresse aus dem neuen Netz holt.", "Briefly unplug the cable of the LAN device or renew its IP address so it gets an address from the new network.") +
-    "</small></p>" + pageFooter());
+
+  String name = "NAT";
+  if (newMode == MODE_BRIDGE) name = "Bridge";
+  else if (newMode == MODE_AP_NAT) name = T("Access Point (NAT)", "Access point (NAT)");
+  else if (newMode == MODE_AP_BRIDGE) name = T("Access Point (Bridge)", "Access point (bridge)");
+
+  String body = String("<p>") + T("Betriebsart ", "Operating mode ") + "<b>" + name + "</b> " + T("gespeichert. Die Bridge startet neu.", "saved. The bridge is restarting.") + "</p>";
+  if (newMode == MODE_AP_NAT) {
+    body += String("<p>") + T("Verbinde den LAN-Port mit deinem Router. Verbinde dich danach mit dem WLAN ", "Connect the LAN port to your router. Then connect to the WiFi ") + "<b>" + htmlEscape(apSsid) + "</b> " +
+      T("und &ouml;ffne", "and open") + " <a href='/'>192.168.4.1</a>.</p>";
+  } else if (newMode == MODE_AP_BRIDGE) {
+    body += String("<p class='bad'><b>") + T("Das Webinterface ist ab jetzt nicht mehr unter 192.168.4.1 erreichbar, sondern unter der IP, die der Router der Bridge gibt: ", "From now on the web interface is no longer at 192.168.4.1 but at the IP your router assigns to the bridge: ") +
+      "http://" + BRIDGE_HOSTNAME + ".fritz.box</b></p><p>" +
+      T("Verbinde den LAN-Port mit deinem Router. WLAN-Ger&auml;te verbinden sich mit ", "Connect the LAN port to your router. WiFi devices connect to ") + "<b>" + htmlEscape(apSsid) + "</b> " +
+      T("und bekommen ihre Adresse vom Router.", "and get their address from the router.") + "</p><p>" +
+      T("<b>Zur&uuml;ck zur Einrichtung:</b> Stromversorgung 3-mal hintereinander kurz aus- und wieder einschalten (jeweils innerhalb von 10 Sekunden).", "<b>Back to setup:</b> switch the power off and on again 3 times in a row (each within 10 seconds).") + "</p>";
+  } else {
+    body += String("<p>") + T("Verbinde dich danach wieder mit dem WLAN ", "Afterwards, reconnect to the WiFi ") + "<b>" + htmlEscape(apSsid) + "</b> " + T("und &ouml;ffne", "and open") + " <a href='/'>192.168.4.1</a>.</p><p><small>" +
+      T("Ziehe am LAN-Ger&auml;t kurz das Kabel ab oder erneuere dort die IP-Adresse, damit es eine Adresse aus dem neuen Netz holt.", "Briefly unplug the cable of the LAN device or renew its IP address so it gets an address from the new network.") + "</small></p>";
+  }
+  webServer.send(200, "text/html; charset=utf-8", pageHeader(T("Neustart", "Restart")) + "<h1>" + T("Neustart", "Restarting") + "</h1>" + body + pageFooter());
   restartAtMs = millis() + 1500;  // Antwort erst noch ausliefern
 }
 
@@ -691,29 +1270,504 @@ void sendApPasswordError(const String &message) {
   webServer.send(400, "text/html; charset=utf-8", pageHeader(T("Fehler", "Error")) + "<h1>" + T("Passwort nicht ge&auml;ndert", "Password not changed") + "</h1><p class='bad'>" + message + "</p><p><a href='/'>" + T("Zur&uuml;ck zur Startseite", "Back to the start page") + "</a></p>" + pageFooter());
 }
 
+// Warnung zum offenen WLAN (wird nur angezeigt, wenn die Option angehakt ist)
+String openWifiWarningHtml() {
+  return String("<div class='openwarn'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M12 3L2 21h20L12 3z'/><path d='M12 10v5M12 18v.5'/></svg><div><b>") +
+    T("Offenes WLAN: kein Passwort, keine Verschl&uuml;sselung!", "Open WiFi: no password, no encryption!") + "</b><br>" +
+    T("Jeder in Reichweite kann sich verbinden, deinen Internetanschluss nutzen und dieses Webinterface &ouml;ffnen. Der Funkverkehr ist unverschl&uuml;sselt und kann mitgelesen werden. Im Modus &bdquo;Access Point (Bridge)&ldquo; landen fremde Ger&auml;te direkt in deinem Heimnetz.",
+      "Anyone in range can connect, use your internet connection and open this web interface. Radio traffic is unencrypted and can be read by others. In \"access point (bridge)\" mode, foreign devices end up directly in your home network.") + "<br>" +
+    T("<b>Tipp:</b> in der Firewall &bdquo;Nur Internet, kein Heimnetz&ldquo; und &bdquo;Webinterface der Bridge sperren&ldquo; einschalten.",
+      "<b>Tip:</b> enable \"Internet only, no home network\" and \"Block the bridge web interface\" in the firewall.") + "</div></div>";
+}
+
+// Prueft und speichert Name/Passwort des eigenen WLANs. Leeres Passwort = bisheriges behalten.
+bool applyApCredentials(String ssid, const String &password, const String &repeat, String &error, bool openWifi) {
+  ssid.trim();
+  if (!isValidSsid(ssid)) {
+    error = T("Der WLAN-Name muss 1 bis 32 Zeichen lang sein (keine Umlaute).", "The WiFi name must be 1 to 32 characters long (ASCII only).");
+    return false;
+  }
+  if (openWifi) {
+    // Bewusst offenes WLAN: Passwort loeschen und die Wahl merken
+    preferences.putString("ap_ssid", ssid);
+    apSsid = ssid;
+    preferences.putString("ap_pass", "");
+    setupApPassword = "";
+    apOpenChosen = true;
+    preferences.putBool("ap_openok", true);
+    Serial.println("WLAN der Bridge: OFFEN (bewusst gewaehlt)");
+    return true;
+  }
+  if (password != repeat) {
+    error = T("Die beiden Passwort-Eingaben stimmen nicht &uuml;berein.", "The two password entries do not match.");
+    return false;
+  }
+  const bool keepPassword = password.isEmpty() && !setupApPassword.isEmpty();
+  if (!keepPassword && !isValidWifiPassword(password)) {
+    error = T("Das Passwort muss 8 bis 63 Zeichen lang sein und darf nur Buchstaben, Ziffern, Leerzeichen und die &uuml;blichen Sonderzeichen enthalten (keine Umlaute).",
+              "The password must be 8 to 63 characters long and may only contain letters, digits, spaces and common special characters (ASCII only).");
+    return false;
+  }
+  preferences.putString("ap_ssid", ssid);
+  apSsid = ssid;
+  if (!keepPassword) {
+    preferences.putString("ap_pass", password);
+    setupApPassword = password;
+  }
+  if (apOpenChosen) {
+    apOpenChosen = false;
+    preferences.putBool("ap_openok", false);
+  }
+  Serial.println("WLAN-Name/Passwort der Bridge gespeichert");
+  return true;
+}
+
 void saveApPassword() {
   detectLanguage();
-  const String newPassword = webServer.arg("ap_new");
-  const String repeat = webServer.arg("ap_repeat");
-  if (newPassword != repeat) {
-    sendApPasswordError(T("Die beiden Eingaben stimmen nicht &uuml;berein.", "The two entries do not match."));
+  String error;
+  if (!applyApCredentials(webServer.arg("ap_ssid"), webServer.arg("ap_new"), webServer.arg("ap_repeat"), error, webServer.arg("ap_open") == "1")) {
+    sendApPasswordError(error);
     return;
   }
-  if (!isValidWifiPassword(newPassword)) {
-    sendApPasswordError(T("Das Passwort muss 8 bis 63 Zeichen lang sein und darf nur Buchstaben, Ziffern, Leerzeichen und die &uuml;blichen Sonderzeichen enthalten (keine Umlaute).",
-                          "The password must be 8 to 63 characters long and may only contain letters, digits, spaces and common special characters (ASCII only)."));
-    return;
-  }
-  preferences.putString("ap_pass", newPassword);
-  setupApPassword = newPassword;
-  Serial.println("Neues Passwort fuer das Einrichtungs-WLAN gespeichert");
-  webServer.send(200, "text/html; charset=utf-8", pageHeader(T("Gespeichert", "Saved")) + "<h1>" + T("Passwort ge&auml;ndert", "Password changed") + "</h1><p>" +
-    T("Das neue Passwort f&uuml;r das WLAN ", "The new password for the WiFi ") + "<b>" + SETUP_AP_SSID + "</b> " +
-    T("ist gespeichert. Die Bridge startet jetzt neu.", "has been saved. The bridge is restarting now.") + "</p><p>" +
-    T("Verbinde dich danach <b>mit dem neuen Passwort</b> wieder mit dem WLAN und &ouml;ffne <a href='/'>192.168.4.1</a>. Eventuell musst du das WLAN auf deinem Ger&auml;t vorher &bdquo;vergessen&ldquo;.",
-      "Afterwards, reconnect to the WiFi <b>with the new password</b> and open <a href='/'>192.168.4.1</a>. You may have to \"forget\" the WiFi on your device first.") +
+  webServer.send(200, "text/html; charset=utf-8", pageHeader(T("Gespeichert", "Saved")) + "<h1>" + T("Gespeichert", "Saved") + "</h1><p>" +
+    T("Die Einstellungen f&uuml;r das WLAN ", "The settings for the WiFi ") + "<b>" + htmlEscape(apSsid) + "</b> " +
+    T("sind gespeichert. Die Bridge startet jetzt neu.", "have been saved. The bridge is restarting now.") + "</p><p>" +
+    T("Verbinde dich danach mit dem WLAN (ggf. mit dem neuen Namen bzw. Passwort) und &ouml;ffne <a href='/'>192.168.4.1</a>. Eventuell musst du das WLAN auf deinem Ger&auml;t vorher &bdquo;vergessen&ldquo;.",
+      "Afterwards, connect to the WiFi (with the new name or password, if changed) and open <a href='/'>192.168.4.1</a>. You may have to \"forget\" the WiFi on your device first.") +
     "</p>" + pageFooter());
   restartAtMs = millis() + 1500;
+}
+
+// ---------------------------------------------------------------------------
+// Access-Point-Modi
+// ---------------------------------------------------------------------------
+
+bool isApMode() { return bridgeMode == MODE_AP_NAT || bridgeMode == MODE_AP_BRIDGE; }
+
+// SSID: 1 bis 32 druckbare ASCII-Zeichen
+bool isValidSsid(const String &ssid) {
+  if (ssid.length() < 1 || ssid.length() > 32) return false;
+  for (size_t i = 0; i < ssid.length(); ++i) {
+    const char c = ssid[i];
+    if (c < 32 || c > 126) return false;
+  }
+  return true;
+}
+
+// AP-NAT: LAN-Port holt sich per DHCP eine Adresse vom Router (Uplink), das WLAN bekommt NAT.
+void startApNatUplink() {
+  esp_netif_inherent_config_t netifConfig = ESP_NETIF_INHERENT_DEFAULT_ETH();  // DHCP-Client
+  netifConfig.if_key = "ETH_UPLINK";
+  netifConfig.if_desc = "ethernet-uplink";
+  esp_netif_config_t config{};
+  config.base = &netifConfig;
+  config.stack = ESP_NETIF_NETSTACK_DEFAULT_ETH;
+  ethernetNetif = esp_netif_new(&config);
+  if (ethernetNetif == nullptr || esp_netif_attach(ethernetNetif, esp_eth_new_netif_glue(ethernetHandle)) != ESP_OK) {
+    Serial.println("AP-NAT: Uplink-Schnittstelle konnte nicht angelegt werden");
+    return;
+  }
+  esp_netif_set_hostname(ethernetNetif, BRIDGE_HOSTNAME);
+  esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onUplinkIpEvent, nullptr);
+  if (esp_eth_start(ethernetHandle) != ESP_OK) {
+    Serial.println("AP-NAT: Ethernet konnte nicht eingeschaltet werden");
+    return;
+  }
+  const esp_err_t result = esp_netif_napt_enable(WiFi.AP.netif());
+  if (result != ESP_OK) Serial.printf("AP-NAT: NAT konnte nicht aktiviert werden: 0x%x\n", static_cast<unsigned>(result));
+  ethernetLanReady = true;
+  Serial.println("AP-NAT: WLAN 192.168.4.x, Uplink per DHCP ueber den LAN-Port");
+}
+
+void onUplinkIpEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData) {
+  const ip_event_got_ip_t *info = static_cast<const ip_event_got_ip_t *>(eventData);
+  if (info->esp_netif != ethernetNetif) return;
+  Serial.printf("Uplink-IP vom Router: " IPSTR " (Gateway " IPSTR ")\n", IP2STR(&info->ip_info.ip), IP2STR(&info->ip_info.gw));
+  fwRouterIp = toHostOrder(info->ip_info.gw.addr);
+  fwOwnIpExtra = toHostOrder(info->ip_info.ip.addr);
+  if (bridgeMode == MODE_AP_NAT) apDnsUpdatePending = true;
+}
+
+// AP-NAT: DNS-Server des Routers an die WLAN-Clients weitergeben (im loop, nicht im Event-Task)
+void updateApDns() {
+  apDnsUpdatePending = false;
+  esp_netif_dns_info_t dns{};
+  if (ethernetNetif == nullptr || esp_netif_get_dns_info(ethernetNetif, ESP_NETIF_DNS_MAIN, &dns) != ESP_OK || dns.ip.u_addr.ip4.addr == 0) return;
+  WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0), IPAddress((uint32_t)0), IPAddress(dns.ip.u_addr.ip4.addr));
+  esp_netif_napt_enable(WiFi.AP.netif());
+  fwDnsIp = toHostOrder(dns.ip.u_addr.ip4.addr);
+  Serial.printf("AP-NAT: DNS fuer WLAN-Clients: " IPSTR "\n", IP2STR(&dns.ip.u_addr.ip4));
+}
+
+
+// NAT-Modus: Frames vom LAN-Geraet pruefen, bevor sie in den TCP/IP-Stack gehen
+esp_err_t onNatLanInput(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv) {
+  if (!fwCheckFrame(buffer, len, true)) {
+    free(buffer);
+    return ESP_OK;
+  }
+  return esp_netif_receive(ethernetNetif, buffer, len, nullptr);
+}
+
+// AP-NAT: Frames der WLAN-Geraete pruefen, bevor sie in den TCP/IP-Stack gehen
+esp_err_t onApNatWifiFrame(void *buffer, uint16_t len, void *eb) {
+  if (!fwCheckApFrame(static_cast<uint8_t *>(buffer), len)) {
+    esp_wifi_internal_free_rx_buffer(eb);
+    return ESP_OK;
+  }
+  return esp_netif_receive(apNetif, buffer, len, eb);
+}
+
+// Access-Point-Modi: verbundene Geraete merken, MAC-Filter, Empfangsfilter (nach den Standard-Handlern)
+void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData) {
+  if (eventId == WIFI_EVENT_AP_STACONNECTED) {
+    const wifi_event_ap_staconnected_t *info = static_cast<const wifi_event_ap_staconnected_t *>(eventData);
+    if (fwEnabled && fwMacFilter && !fwMacListed(info->mac)) {
+      Serial.printf("MAC-Filter: %s abgewiesen\n", macToString(info->mac).c_str());
+      esp_wifi_deauth_sta(info->aid);
+      return;
+    }
+    portENTER_CRITICAL(&fwLock);
+    for (int i = 0; i < FW_MAX_STATIONS; ++i) {
+      if (!apStationUsed[i]) { apStationUsed[i] = true; memcpy(apStationMacs[i], info->mac, 6); break; }
+    }
+    portEXIT_CRITICAL(&fwLock);
+  } else if (eventId == WIFI_EVENT_AP_STADISCONNECTED) {
+    const wifi_event_ap_stadisconnected_t *info = static_cast<const wifi_event_ap_stadisconnected_t *>(eventData);
+    portENTER_CRITICAL(&fwLock);
+    for (int i = 0; i < FW_MAX_STATIONS; ++i) {
+      if (apStationUsed[i] && memcmp(apStationMacs[i], info->mac, 6) == 0) apStationUsed[i] = false;
+    }
+    portEXIT_CRITICAL(&fwLock);
+  }
+  if (bridgeMode == MODE_AP_NAT && (eventId == WIFI_EVENT_AP_START || eventId == WIFI_EVENT_AP_STACONNECTED)) {
+    esp_wifi_internal_reg_rxcb(WIFI_IF_AP, onApNatWifiFrame);
+  }
+}
+
+// AP-Bridge: WLAN -> Ethernet (laeuft im WLAN-Task)
+// Kopie eines Frames an den eigenen TCP/IP-Stack der Bridge geben (Webinterface im AP-Bridge-Modus)
+void deliverCopyToBridge(const void *frame, size_t len) {
+  if (ethernetNetif == nullptr) return;
+  void *copy = malloc(len);
+  if (copy == nullptr) return;
+  memcpy(copy, frame, len);
+  esp_netif_receive(ethernetNetif, copy, len, nullptr);  // gibt die Kopie spaeter mit free() frei
+}
+
+esp_err_t onApWifiFrame(void *buffer, uint16_t len, void *eb) {
+  const uint8_t *frame = static_cast<const uint8_t *>(buffer);
+  if (len >= BR_ETH_HEADER_LEN && fwCheckApFrame(frame, len)) {
+    const bool forBridge = memcmp(frame, ethMac, 6) == 0;
+    const bool group = frame[0] & 0x01;
+    if (forBridge || group) deliverCopyToBridge(frame, len);  // Webinterface, ARP, DHCP
+    if (!forBridge && ethernetLinkUp) {
+      if (esp_eth_transmit(ethernetHandle, buffer, len) == ESP_OK) framesToLan = framesToLan + 1;
+      else framesDropped = framesDropped + 1;
+    }
+  }
+  esp_wifi_internal_free_rx_buffer(eb);
+  return ESP_OK;
+}
+
+// Sendeweg des eigenen TCP/IP-Stacks im AP-Bridge-Modus: an WLAN-Geraete ueber den AP, sonst ueber Ethernet
+esp_err_t apBridgeNetifTransmit(void *handle, void *buffer, size_t len) {
+  const uint8_t *frame = static_cast<const uint8_t *>(buffer);
+  const bool group = frame[0] & 0x01;
+  const bool toStation = !group && fwIsApStation(frame);
+  if (group || toStation) esp_wifi_internal_tx(WIFI_IF_AP, buffer, static_cast<uint16_t>(len));
+  if (toStation) return ESP_OK;
+  return esp_eth_transmit(ethernetHandle, buffer, len);
+}
+
+void apBridgeNetifFree(void *handle, void *buffer) { free(buffer); }
+
+// AP-Bridge: Ethernet -> Warteschlange (laeuft im Empfangs-Task des Ethernet-Treibers)
+esp_err_t onUplinkFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv) {
+  ForwardFrame frame{buffer, static_cast<uint16_t>(len)};
+  if (len < BR_ETH_HEADER_LEN || len > 1600) {
+    free(buffer);
+    return ESP_OK;
+  }
+  // An die Bridge selbst (Webinterface, DHCP-Antwort): direkt an den eigenen TCP/IP-Stack
+  if (ethernetNetif != nullptr && memcmp(buffer, ethMac, 6) == 0) {
+    return esp_netif_receive(ethernetNetif, buffer, len, nullptr);
+  }
+  if (buffer[0] & 0x01) deliverCopyToBridge(buffer, len);  // Broadcast/Multicast: auch an die Bridge
+  fwLearnDhcp(buffer, static_cast<uint16_t>(len));
+  if (!fwCheckFrame(buffer, len, false)) {
+    free(buffer);
+    return ESP_OK;
+  }
+  if (apStationCount <= 0 || len > 1600 || xQueueSend(apForwardQueue, &frame, pdMS_TO_TICKS(20)) != pdTRUE) {
+    if (apStationCount > 0) framesDropped = framesDropped + 1;
+    free(buffer);
+  }
+  return ESP_OK;
+}
+
+// AP-Bridge: Warteschlange -> WLAN. Das WLAN ist langsamer als Ethernet, daher mit kurzen Wiederholungen.
+void apForwardTask(void *argument) {
+  ForwardFrame frame;
+  for (;;) {
+    if (xQueueReceive(apForwardQueue, &frame, portMAX_DELAY) != pdTRUE) continue;
+    int result = -1;
+    for (uint32_t wait = 0; wait < 100; wait += 2) {
+      result = esp_wifi_internal_tx(WIFI_IF_AP, frame.data, frame.len);
+      if (result == ESP_OK) break;
+      vTaskDelay(pdMS_TO_TICKS(wait));
+    }
+    if (result == ESP_OK) framesToWifi = framesToWifi + 1;
+    else framesDropped = framesDropped + 1;
+    free(frame.data);
+  }
+}
+
+void onApDriverEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData) {
+  if (eventId == WIFI_EVENT_AP_STACONNECTED) {
+    apStationCount = apStationCount + 1;
+    // Alle WLAN-Frames an die Bridge statt an den eigenen TCP/IP-Stack liefern
+    esp_wifi_internal_reg_rxcb(WIFI_IF_AP, onApWifiFrame);
+  } else if (eventId == WIFI_EVENT_AP_STADISCONNECTED) {
+    if (apStationCount > 0) apStationCount = apStationCount - 1;
+  }
+}
+
+// AP-Bridge: Ethernet und WLAN-Access-Point auf Ebene 2 verbinden (wie Espressifs Beispiel "eth2ap").
+void startApBridge() {
+  apForwardQueue = xQueueCreate(40, sizeof(ForwardFrame));
+  if (apForwardQueue == nullptr || xTaskCreate(apForwardTask, "eth2ap", 3072, nullptr, tskIDLE_PRIORITY + 2, nullptr) != pdPASS) {
+    Serial.println("AP-Bridge: Warteschlange konnte nicht angelegt werden");
+    return;
+  }
+  // Eigene Netzwerk-Schnittstelle mit DHCP-Client, damit das Webinterface im Heimnetz erreichbar ist
+  esp_netif_inherent_config_t netifConfig = ESP_NETIF_INHERENT_DEFAULT_ETH();
+  netifConfig.if_key = "ETH_MGMT";
+  netifConfig.if_desc = "ethernet-management";
+  esp_netif_config_t config{};
+  config.base = &netifConfig;
+  config.stack = ESP_NETIF_NETSTACK_DEFAULT_ETH;
+  ethernetNetif = esp_netif_new(&config);
+  if (ethernetNetif != nullptr && esp_netif_attach(ethernetNetif, esp_eth_new_netif_glue(ethernetHandle)) == ESP_OK) {
+    esp_netif_set_hostname(ethernetNetif, BRIDGE_HOSTNAME);
+    // Senden: an WLAN-Geraete ueber den Access Point, sonst ueber Ethernet (ersetzt den Weg von esp_netif_attach)
+    esp_netif_driver_ifconfig_t driver{};
+    driver.handle = ethernetHandle;
+    driver.transmit = apBridgeNetifTransmit;
+    driver.driver_free_rx_buffer = apBridgeNetifFree;
+    esp_netif_set_driver_config(ethernetNetif, &driver);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onUplinkIpEvent, nullptr);
+  } else {
+    ethernetNetif = nullptr;
+    Serial.println("AP-Bridge: Verwaltungs-Schnittstelle konnte nicht angelegt werden (kein Webinterface)");
+  }
+  // Empfang: alle Frames zuerst an onUplinkFrame (ersetzt den Eingang, den esp_netif_attach gesetzt hat)
+  if (esp_eth_update_input_path(ethernetHandle, onUplinkFrame, nullptr) != ESP_OK) {
+    Serial.println("AP-Bridge: Ethernet-Empfang konnte nicht umgeleitet werden");
+    return;
+  }
+  bool promiscuous = true;
+  esp_eth_ioctl(ethernetHandle, ETH_CMD_S_PROMISCUOUS, &promiscuous);
+  if (esp_eth_start(ethernetHandle) != ESP_OK) {
+    Serial.println("AP-Bridge: Ethernet konnte nicht eingeschaltet werden");
+    return;
+  }
+  ethernetLanReady = true;
+  Serial.printf("AP-Bridge: WLAN-Geraete bekommen ihre Adressen direkt vom Router. Webinterface: http://%s.fritz.box bzw. IP vom Router\n", BRIDGE_HOSTNAME);
+  Serial.println("Notfall-Reset: Stromversorgung 3x hintereinander kurz (unter 10 s) aus- und wieder einschalten.");
+}
+
+
+// ---------------------------------------------------------------------------
+// Firewall im Webinterface
+// ---------------------------------------------------------------------------
+
+String firewallStatusJson() {
+  String json = "{\"enabled\":" + String(fwEnabled ? "true" : "false") + ",\"blocked\":" + String(fwBlocked) + ",\"hits\":[";
+  for (int i = 0; i < fwRuleCount; ++i) {
+    if (i) json += ',';
+    json += String(fwHits[i]);
+  }
+  return json + "]}";
+}
+
+String fwCheckbox(const char *name, bool checked, const char *title, const String &text) {
+  return String("<label class='chk'><input type='checkbox' name='") + name + "' value='1'" + (checked ? " checked" : "") + "><span><b>" + title + "</b><small>" + text + "</small></span></label>";
+}
+
+String fwOption(const char *value, const char *label, bool selected) {
+  return String("<option value='") + value + "'" + (selected ? " selected" : "") + ">" + label + "</option>";
+}
+
+String firewallSectionHtml() {
+  const bool apMode = isApMode();
+  String html = String("<h2 id='fw'>") + T("Firewall", "Firewall") + "</h2><form method='post' action='/firewall'><div class='fwbox'>" +
+    fwCheckbox("fw_on", fwEnabled, T("Firewall aktiv", "Firewall enabled"),
+      T("Pr&uuml;ft den Datenverkehr der angeschlossenen Ger&auml;te (LAN-Port bzw. WLAN-Ger&auml;te im Access-Point-Modus). Nur IPv4; IPv6 wird bei aktiver Firewall gesperrt.",
+        "Checks the traffic of the connected devices (LAN port or WiFi devices in access point mode). IPv4 only; IPv6 is blocked while the firewall is enabled.")) +
+    fwCheckbox("fw_nohome", fwNoHome, T("Nur Internet, kein Heimnetz", "Internet only, no home network"),
+      T("Sperrt Zugriffe auf private Adressen (10.x, 172.16&ndash;31.x, 192.168.x, Multicast). Erlaubt bleiben DHCP sowie DNS und Ping zum Router. Ideal f&uuml;r Smart-TV, IoT-Ger&auml;te oder G&auml;ste.",
+        "Blocks access to private addresses (10.x, 172.16&ndash;31.x, 192.168.x, multicast). DHCP as well as DNS and ping to the router stay allowed. Ideal for smart TVs, IoT devices or guests.")) +
+    fwCheckbox("fw_noadmin", fwNoAdmin, T("Webinterface der Bridge sperren", "Block the bridge web interface"),
+      String(T("Angeschlossene Ger&auml;te k&ouml;nnen diese Seite nicht &ouml;ffnen.", "Connected devices cannot open this page.")) +
+      (bridgeMode == MODE_AP_NAT ? String(" <b class='bad'>") + T("Achtung: Im Access-Point-Modus (NAT) sperrt dich das im WLAN aus; die Seite ist dann nur noch &uuml;ber die IP der Bridge im Heimnetz erreichbar.",
+                                                               "Warning: in access point mode (NAT) this locks you out on the WiFi; the page is then only reachable via the bridge IP in the home network.") + "</b>" : String("")));
+  if (apMode) {
+    html += fwCheckbox("fw_isolate", fwIsolate, T("WLAN-Ger&auml;te voneinander trennen", "Isolate WiFi devices from each other"),
+      T("Die WLAN-Ger&auml;te der Bridge k&ouml;nnen sich gegenseitig nicht erreichen.", "The bridge's WiFi devices cannot reach each other."));
+  }
+
+  html += String("<h3>") + T("Eigene Regeln", "Custom rules") + "</h3><p><small>" +
+    T("Werden von oben nach unten gepr&uuml;ft, die erste passende Regel entscheidet. Ziel: IP (192.168.1.10), Netz (192.168.1.0/24) oder * f&uuml;r alle. Port leer = alle Ports, sonst z. B. 443 oder 1000-2000. Ziel leeren, um eine Regel zu l&ouml;schen. Rechts: Treffer.",
+      "Checked from top to bottom, the first matching rule decides. Target: IP (192.168.1.10), network (192.168.1.0/24) or * for all. Empty port = all ports, otherwise e.g. 443 or 1000-2000. Clear the target to delete a rule. Right: hits.") + "</small></p>";
+  const int rows = fwRuleCount + 3 > FW_MAX_RULES ? FW_MAX_RULES : fwRuleCount + 3;
+  for (int i = 0; i < rows; ++i) {
+    const bool used = i < fwRuleCount;
+    const FwRule rule = used ? fwRules[i] : FwRule{1, 1, FW_ANY, 32, 0, 0, 0};
+    const String n = "r" + String(i) + "_";
+    html += "<div class='fwrule'><input type='checkbox' name='" + n + "on' value='1'" + (rule.enabled ? " checked" : "") + " title='" + T("aktiv", "active") + "'>"
+      "<select name='" + n + "act'>" + fwOption("block", T("Sperren", "Block"), rule.block) + fwOption("allow", T("Erlauben", "Allow"), !rule.block) + "</select>"
+      "<select name='" + n + "proto'>" + fwOption("any", T("Alle", "All"), rule.proto == FW_ANY) + fwOption("tcp", "TCP", rule.proto == FW_TCP) + fwOption("udp", "UDP", rule.proto == FW_UDP) + fwOption("icmp", "ICMP", rule.proto == FW_ICMP) + "</select>"
+      "<input name='" + n + "dst' maxlength='18' placeholder='" + T("Ziel, z. B. 192.168.1.0/24", "Target, e.g. 192.168.1.0/24") + "' value='" + (used ? fwTargetText(rule) : String("")) + "'>"
+      "<input name='" + n + "port' maxlength='11' placeholder='" + T("Port", "Port") + "' value='" + (used ? fwPortText(rule) : String("")) + "'>"
+      "<span class='hits' id='hit" + String(i) + "'>" + (used ? String(fwHits[i]) : String("")) + "</span></div>";
+  }
+  html += String("<label>") + T("Alles andere", "Everything else") + "<select name='fw_default'>" +
+    fwOption("allow", T("erlauben", "allow"), !fwDefaultBlock) + fwOption("block", T("sperren (dann DNS, Port 53, per Regel erlauben)", "block (then allow DNS, port 53, with a rule)"), fwDefaultBlock) + "</select></label>";
+
+  if (apMode) {
+    html += String("<h3>") + T("Zugelassene WLAN-Ger&auml;te", "Allowed WiFi devices") + "</h3>" +
+      fwCheckbox("fw_macon", fwMacFilter, T("Nur diese Ger&auml;te zulassen (MAC-Filter)", "Only allow these devices (MAC filter)"),
+        T("Eine MAC-Adresse pro Zeile, z. B. AA:BB:CC:DD:EE:FF. Andere Ger&auml;te werden sofort wieder getrennt. Trage zuerst dein eigenes Ger&auml;t ein.",
+          "One MAC address per line, e.g. AA:BB:CC:DD:EE:FF. Other devices are disconnected immediately. Add your own device first.")) +
+      "<textarea name='fw_macs' spellcheck='false'>";
+    for (int i = 0; i < fwMacCount; ++i) html += macToString(fwMacs[i]) + "\n";
+    html += String("</textarea><p><small>") + T("Gerade verbunden:", "Currently connected:") + "</small></p><div id='fwMacPick'></div>";
+  }
+  html += String("<p><small>") + T("Gesperrte Pakete seit dem Start: ", "Blocked packets since start: ") + "<b id='fwBlocked'>" + String(fwBlocked) + "</b></small></p>"
+    "<button type='submit'>" + T("Firewall speichern", "Save firewall") + "</button></div></form>";
+  return html;
+}
+
+// MAC-Adresse des anfragenden WLAN-Geraets (AP-NAT), um Selbstaussperren zu verhindern
+bool requesterMac(uint8_t *mac) {
+  if (bridgeMode != MODE_AP_NAT) return false;
+  const uint32_t remote = static_cast<uint32_t>(webServer.client().remoteIP());
+  wifi_sta_list_t list{};
+  if (esp_wifi_ap_get_sta_list(&list) != ESP_OK || list.num <= 0) return false;
+  esp_netif_pair_mac_ip_t pairs[ESP_WIFI_MAX_CONN_NUM] = {};
+  const int count = list.num < ESP_WIFI_MAX_CONN_NUM ? list.num : ESP_WIFI_MAX_CONN_NUM;
+  for (int i = 0; i < count; ++i) memcpy(pairs[i].mac, list.sta[i].mac, 6);
+  if (esp_netif_dhcps_get_clients_by_mac(apNetif, count, pairs) != ESP_OK) return false;
+  for (int i = 0; i < count; ++i) {
+    if (pairs[i].ip.addr != 0 && pairs[i].ip.addr == remote) { memcpy(mac, pairs[i].mac, 6); return true; }
+  }
+  return false;
+}
+
+void saveFirewall() {
+  detectLanguage();
+  String errors;
+  FwRule rules[FW_MAX_RULES] = {};
+  int count = 0;
+  for (int i = 0; i < FW_MAX_RULES; ++i) {
+    const String n = "r" + String(i) + "_";
+    if (!webServer.hasArg(n + "dst")) continue;
+    String target = webServer.arg(n + "dst");
+    target.trim();
+    if (target.isEmpty()) continue;
+    FwRule rule{};
+    rule.enabled = webServer.arg(n + "on") == "1";
+    rule.block = webServer.arg(n + "act") != "allow";
+    const String proto = webServer.arg(n + "proto");
+    rule.proto = proto == "tcp" ? FW_TCP : proto == "udp" ? FW_UDP : proto == "icmp" ? FW_ICMP : FW_ANY;
+    const String rowLabel = String(T("Regel ", "Rule ")) + String(i + 1) + ": ";
+    if (!fwParseTarget(target, rule.net, rule.prefix)) {
+      errors += "<li>" + rowLabel + T("Ziel ung&uuml;ltig (z. B. 192.168.1.10, 192.168.1.0/24 oder *)", "invalid target (e.g. 192.168.1.10, 192.168.1.0/24 or *)") + "</li>";
+      continue;
+    }
+    if (!fwParsePorts(webServer.arg(n + "port"), rule.portFrom, rule.portTo)) {
+      errors += "<li>" + rowLabel + T("Port ung&uuml;ltig (1-65535, z. B. 443 oder 1000-2000)", "invalid port (1-65535, e.g. 443 or 1000-2000)") + "</li>";
+      continue;
+    }
+    if (rule.portFrom != 0 && (rule.proto == FW_ICMP)) {
+      errors += "<li>" + rowLabel + T("ICMP hat keine Ports", "ICMP has no ports") + "</li>";
+      continue;
+    }
+    rules[count++] = rule;
+  }
+
+  uint8_t macs[FW_MAX_MACS][6] = {};
+  int macCount = 0;
+  String macText = webServer.arg("fw_macs");
+  macText.replace("\r", "");
+  int start = 0;
+  while (start <= static_cast<int>(macText.length())) {
+    int end = macText.indexOf('\n', start);
+    if (end < 0) end = macText.length();
+    String line = macText.substring(start, end);
+    line.trim();
+    if (!line.isEmpty()) {
+      uint8_t mac[6];
+      if (!fwParseMac(line, mac)) errors += "<li>" + String(T("MAC-Adresse ung&uuml;ltig: ", "invalid MAC address: ")) + htmlEscape(line) + "</li>";
+      else if (macCount >= FW_MAX_MACS) errors += "<li>" + String(T("Maximal 16 MAC-Adressen", "At most 16 MAC addresses")) + "</li>";
+      else memcpy(macs[macCount++], mac, 6);
+    }
+    start = end + 1;
+  }
+
+  const bool enabled = webServer.arg("fw_on") == "1";
+  const bool macFilter = webServer.arg("fw_macon") == "1";
+  if (enabled && macFilter && isApMode()) {
+    if (macCount == 0) {
+      errors += "<li>" + String(T("Der MAC-Filter braucht mindestens eine Adresse.", "The MAC filter needs at least one address.")) + "</li>";
+    } else {
+      uint8_t own[6];
+      bool listed = true;
+      if (requesterMac(own)) {
+        listed = false;
+        for (int i = 0; i < macCount; ++i) if (memcmp(macs[i], own, 6) == 0) listed = true;
+      }
+      if (!listed) errors += "<li>" + String(T("Dein Ger&auml;t ", "Your device ")) + macToString(own) + T(" steht nicht in der Liste &ndash; du w&uuml;rdest dich aussperren.", " is not in the list &ndash; you would lock yourself out.") + "</li>";
+    }
+  }
+
+  if (!errors.isEmpty()) {
+    webServer.send(400, "text/html; charset=utf-8", pageHeader(T("Fehler", "Error")) + "<h1>" + T("Firewall nicht gespeichert", "Firewall not saved") + "</h1><ul class='bad'>" + errors + "</ul><p><a href='/#fw'>" + T("Zur&uuml;ck", "Back") + "</a></p>" + pageFooter());
+    return;
+  }
+
+  portENTER_CRITICAL(&fwLock);
+  memcpy(fwRules, rules, sizeof(rules));
+  fwRuleCount = count;
+  for (int i = 0; i < FW_MAX_RULES; ++i) fwHits[i] = 0;
+  memcpy(fwMacs, macs, sizeof(macs));
+  fwMacCount = macCount;
+  fwNoHome = webServer.arg("fw_nohome") == "1";
+  fwNoAdmin = webServer.arg("fw_noadmin") == "1";
+  fwIsolate = webServer.arg("fw_isolate") == "1";
+  fwDefaultBlock = webServer.arg("fw_default") == "block";
+  fwMacFilter = macFilter;
+  fwEnabled = enabled;
+  portEXIT_CRITICAL(&fwLock);
+  fwSave();
+  Serial.printf("Firewall gespeichert: %s, %d Regeln\n", fwEnabled ? "aktiv" : "aus", fwRuleCount);
+
+  webServer.send(200, "text/html; charset=utf-8", pageHeader(T("Gespeichert", "Saved")) + "<h1>" + T("Firewall gespeichert", "Firewall saved") + "</h1><p>" +
+    (fwEnabled ? T("Die Firewall ist aktiv. Die Regeln gelten sofort, ein Neustart ist nicht n&ouml;tig.", "The firewall is enabled. The rules apply immediately, no restart needed.")
+               : T("Die Firewall ist ausgeschaltet.", "The firewall is disabled.")) +
+    "</p><p><a href='/#fw'>" + T("Zur&uuml;ck zur Startseite", "Back to the start page") + "</a></p>" + pageFooter());
+
+  // Bereits verbundene, nicht zugelassene WLAN-Geraete sofort trennen (erst nach der Antwort)
+  if (fwEnabled && fwMacFilter && isApMode()) {
+    wifi_sta_list_t list{};
+    if (esp_wifi_ap_get_sta_list(&list) == ESP_OK) {
+      for (int i = 0; i < list.num && i < ESP_WIFI_MAX_CONN_NUM; ++i) {
+        uint16_t aid = 0;
+        if (!fwMacListed(list.sta[i].mac) && esp_wifi_ap_get_sta_aid(list.sta[i].mac, &aid) == ESP_OK) esp_wifi_deauth_sta(aid);
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -808,6 +1862,7 @@ bool installEthernetDriver() {
     return false;
   }
   esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &onEthernetEvent, nullptr);
+  esp_eth_ioctl(ethernetHandle, ETH_CMD_G_MAC_ADDR, ethMac);
   return true;
 }
 
@@ -834,6 +1889,8 @@ void startNatLan() {
     Serial.println("Ethernet-LAN konnte nicht mit dem Netzwerk verbunden werden");
     return;
   }
+  // Empfang ueber die Firewall leiten (ersetzt den Eingang, den esp_netif_attach gesetzt hat)
+  esp_eth_update_input_path(ethernetHandle, onNatLanInput, nullptr);
 
   // DNS fuer die LAN-Clients: erst das Angebot aktivieren, dann die Adresse setzen.
   esp_netif_dns_info_t dns{};
@@ -899,28 +1956,67 @@ void setup() {
   delay(250);
   WiFi.onEvent(onNetworkEvent);
   preferences.begin("bridge", false);
+
+  // Notfall-Reset: 3x hintereinander Strom aus/an (jeweils < 10 s) setzt die Betriebsart auf NAT zurueck.
+  uint8_t quickBoots = preferences.getUChar("boots", 0);
+  quickBoots = (esp_reset_reason() == ESP_RST_POWERON) ? quickBoots + 1 : 0;
+  if (quickBoots >= 3) {
+    preferences.putUChar("mode", MODE_NAT);
+    quickBoots = 0;
+    recoveryTriggered = true;
+    Serial.println("Notfall-Reset: Betriebsart auf NAT zurueckgesetzt");
+  }
+  preferences.putUChar("boots", quickBoots);
+  bootCounterClearAtMs = millis() + 10000;
+
+  fwLoad();
   routerSsid = preferences.getString("ssid", "");
   routerPassword = preferences.getString("password", "");
+  apSsid = preferences.getString("ap_ssid", SETUP_AP_SSID);
+  if (!isValidSsid(apSsid)) apSsid = SETUP_AP_SSID;
   setupApPassword = preferences.getString("ap_pass", SETUP_AP_PASSWORD);
   if (!isValidWifiPassword(setupApPassword)) setupApPassword = isValidWifiPassword(SETUP_AP_PASSWORD) ? SETUP_AP_PASSWORD : "";
-  bridgeMode = preferences.getUChar("mode", MODE_NAT) == MODE_BRIDGE ? MODE_BRIDGE : MODE_NAT;
+  const uint8_t storedMode = preferences.getUChar("mode", MODE_NAT);
+  bridgeMode = storedMode <= MODE_AP_BRIDGE ? static_cast<BridgeMode>(storedMode) : MODE_NAT;
+  apOpenChosen = setupApPassword.isEmpty() && preferences.getBool("ap_openok", false);
+  if (isApMode() && setupApPassword.isEmpty() && !apOpenChosen) bridgeMode = MODE_NAT;  // kein ungewollt offener Access Point
+  const char *modeNames[] = {"NAT", "Bridge", "Access Point (NAT)", "Access Point (Bridge)"};
   Serial.printf("WT32-ETH01 Ethernet-WLAN-Bridge, Firmware %s\n", FIRMWARE_VERSION);
-  Serial.printf("Betriebsart: %s\n", bridgeMode == MODE_BRIDGE ? "Bridge" : "NAT");
+  Serial.printf("Betriebsart: %s\n", modeNames[bridgeMode]);
 
-  WiFi.mode(WIFI_MODE_APSTA);
-  WiFi.setSleep(false);  // kein WLAN-Energiesparen: geringere Latenz, stabilere Bridge
-  WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-  if (setupApPassword.isEmpty()) {
-    WiFi.softAP(SETUP_AP_SSID);  // offenes WLAN bis ein Passwort festgelegt ist
-    Serial.println("WARNUNG: Einrichtungs-WLAN ist OFFEN (kein Passwort). Bitte im Webinterface ein Passwort festlegen.");
+  const char *apPassword = setupApPassword.isEmpty() ? nullptr : setupApPassword.c_str();
+  if (isApMode()) {
+    WiFi.mode(WIFI_MODE_AP);
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0), IPAddress((uint32_t)0), IPAddress(1, 1, 1, 1));
+    WiFi.softAP(apSsid.c_str(), apPassword, 1, 0, 8);
+    apNetif = WiFi.AP.netif();
+    // Nach den Standard-Handlern registrieren: Geraeteliste, MAC-Filter, Empfangsfilter
+    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onApStaEvent, nullptr);
+    if (bridgeMode == MODE_AP_NAT) esp_wifi_internal_reg_rxcb(WIFI_IF_AP, onApNatWifiFrame);
+    if (bridgeMode == MODE_AP_BRIDGE) {
+      // Die Adressen vergibt der Router: eigenen DHCP-Server des Access Points abschalten
+      esp_netif_dhcps_stop(WiFi.AP.netif());
+      esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onApDriverEvent, nullptr);
+      esp_wifi_internal_reg_rxcb(WIFI_IF_AP, onApWifiFrame);
+    }
   } else {
-    WiFi.softAP(SETUP_AP_SSID, setupApPassword.c_str());
-    if (setupApPassword == SETUP_AP_PASSWORD) Serial.println("Hinweis: Einrichtungs-WLAN nutzt noch das Standard-Passwort");
+    WiFi.setHostname(BRIDGE_HOSTNAME);
+    WiFi.mode(WIFI_MODE_APSTA);
+    WiFi.setSleep(false);  // kein WLAN-Energiesparen: geringere Latenz, stabilere Bridge
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+    WiFi.softAP(apSsid.c_str(), apPassword);
+    esp_wifi_get_mac(WIFI_IF_STA, staMac);
+    if (bridgeMode == MODE_BRIDGE) {
+      // Nach WiFi.mode() registrieren, damit dieser Handler nach denen von ESP-IDF/Arduino laeuft.
+      esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onWifiDriverEvent, nullptr);
+    }
   }
-  esp_wifi_get_mac(WIFI_IF_STA, staMac);
-  if (bridgeMode == MODE_BRIDGE) {
-    // Nach WiFi.mode() registrieren, damit dieser Handler nach denen von ESP-IDF/Arduino laeuft.
-    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onWifiDriverEvent, nullptr);
+  if (setupApPassword.isEmpty() && apOpenChosen) {
+    Serial.println("WARNUNG: WLAN der Bridge ist bewusst OFFEN (ohne Passwort, unverschluesselt).");
+  } else if (setupApPassword.isEmpty()) {
+    Serial.println("WARNUNG: WLAN der Bridge ist OFFEN (kein Passwort). Bitte im Webinterface ein Passwort festlegen.");
+  } else if (setupApPassword == SETUP_AP_PASSWORD) {
+    Serial.println("Hinweis: WLAN der Bridge nutzt noch das Standard-Passwort");
   }
 
   webServer.on("/", HTTP_GET, showHome);
@@ -930,26 +2026,52 @@ void setup() {
   webServer.on("/mode", HTTP_POST, saveMode);
   webServer.on("/appass", HTTP_POST, saveApPassword);
   webServer.on("/lang", HTTP_GET, setLanguage);
+  webServer.on("/firewall", HTTP_POST, saveFirewall);
   static const char *collectedHeaders[] = {"Cookie", "Accept-Language"};
   webServer.collectHeaders(collectedHeaders, 2);
   webServer.onNotFound(showHome);
   webServer.begin();
 
   if (installEthernetDriver()) {
-    if (bridgeMode == MODE_BRIDGE) startBridgeLan();
-    else startNatLan();
+    switch (bridgeMode) {
+      case MODE_BRIDGE: startBridgeLan(); break;
+      case MODE_AP_NAT: startApNatUplink(); break;
+      case MODE_AP_BRIDGE: startApBridge(); break;
+      default: startNatLan(); break;
+    }
   }
-  connectToRouter();
-  Serial.println("Einrichtungsseite: http://192.168.4.1");
+  if (!isApMode()) {
+    // Arduino wuerde sonst pausenlos neu verbinden; das erledigt handleRouterConnection() gedrosselt.
+    WiFi.setAutoReconnect(false);
+    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onStaDisconnectEvent, nullptr);
+    routerChannel = preferences.getUChar("r_chan", 0);
+    if (preferences.getBytesLength("r_bssid") != 6 || preferences.getBytes("r_bssid", routerBssid, 6) != 6) routerChannel = 0;
+    connectToRouter();
+    scheduleReconnect();
+  }
+  if (bridgeMode != MODE_AP_BRIDGE) Serial.println("Webinterface: http://192.168.4.1");
 }
 
 void loop() {
   if (ethernetServicesPending) startLanServices();
+  if (apDnsUpdatePending) updateApDns();
+  if (!isApMode()) handleRouterConnection();
+  // Eigene IP im Router-Netz fuer die Firewall aktuell halten (NAT-Modus)
+  static uint32_t lastOwnIpUpdate = 0;
+  if (bridgeMode == MODE_NAT && millis() - lastOwnIpUpdate > 2000) {
+    lastOwnIpUpdate = millis();
+    fwOwnIpExtra = wifiConnected ? toHostOrder(static_cast<uint32_t>(WiFi.localIP())) : 0;
+  }
   webServer.handleClient();
   // Falls die Seite geschlossen wurde, bevor das Scan-Ergebnis abgeholt war
   if (scanPausedConnect && millis() - scanStartedMs > 20000) {
     WiFi.scanDelete();
     resumeRouterConnection();
+  }
+  // Nach 10 s Laufzeit zaehlt ein Neustart nicht mehr als "schnelles Aus-/Einschalten"
+  if (bootCounterClearAtMs != 0 && static_cast<int32_t>(millis() - bootCounterClearAtMs) >= 0) {
+    preferences.putUChar("boots", 0);
+    bootCounterClearAtMs = 0;
   }
   if (restartAtMs != 0 && static_cast<int32_t>(millis() - restartAtMs) >= 0) {
     ESP.restart();

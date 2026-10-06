@@ -13,6 +13,81 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [2.8] – 2026-10-06
+
+### Added
+- Option **"Open WiFi without password"** as a separate checkbox, both in the WiFi settings and
+  directly with the access point modes. When ticked, the password fields are hidden and a red
+  warning explains the risks (anyone can connect, unencrypted, home network access in bridge mode)
+  with a tip to enable the firewall.
+- While the WiFi is open on purpose, a permanent (non-pulsing) red notice stays at the top of the
+  web interface.
+
+### Changed
+- Access point modes can now also run with an open WiFi, but only if it was chosen explicitly.
+  Setting a password later turns the open WiFi off again.
+
+## [2.7] – 2026-10-06
+
+### Added
+- WiFi name and password of the access point can be entered directly when selecting an access
+  point mode (fields appear below the cards); no separate step needed anymore.
+- **Web interface in access point (bridge) mode**: the bridge now gets its own address from the
+  router via DHCP and stays reachable at that address – from the home network and from its WiFi
+  (e.g. `http://wt32-bridge.fritz.box`). Frames for the bridge itself are passed to its own TCP/IP
+  stack, all other frames are still forwarded.
+- Hostname `wt32-bridge` in the router (client modes and access point modes).
+
+### Changed
+- The warning for access point (bridge) mode now explains where to find the web interface instead
+  of saying it is no longer reachable.
+
+## [2.6.1] – 2026-10-06
+
+### Fixed
+- The setup WiFi was almost unreachable (packet loss, web interface did not load) while the router
+  WiFi could not be found: the bridge retried the connection non-stop, and every attempt scans all
+  WiFi channels with the same radio. Connection attempts are now spaced out (10 s, 20 s, 40 s … up to
+  120 s) and, once the router is known, only search its channel; every third attempt does a full scan
+  in case the router changed its channel.
+
+### Added
+- The web interface shows why the router connection failed (not found / wrong password) and when
+  the next attempt follows.
+
+## [2.6] – 2026-10-05
+
+### Added
+- **Simple firewall** (section "Firewall" in the web interface, applies immediately):
+  - Switches: "Internet only, no home network", "Block the bridge web interface", "Isolate WiFi
+    devices" (access point modes).
+  - Up to 16 custom rules: block/allow, protocol, target IP/network, port/port range, hit counter.
+  - Default action for everything else: allow or block.
+  - MAC allow list for the access point modes; prevents you from locking yourself out.
+  - IPv6 is blocked while the firewall is enabled; counter of blocked packets.
+- Router and DNS are learned from DHCP in the bridge modes so they stay reachable with "Internet
+  only".
+
+## [2.5] – 2026-10-05
+
+### Added
+- **Access point – own WiFi network (NAT)**: LAN port as uplink to the router (DHCP client), own
+  WiFi with DHCP and NAT for up to approx. 8 devices, the router's DNS server is passed on. The web
+  interface stays reachable at `192.168.4.1` and via the bridge IP in the home network.
+- **Access point – WiFi straight into your home network (bridge)**: layer-2 forwarding between
+  Ethernet and the access point (like Espressif's `eth2ap`); WiFi devices get their addresses from
+  the router. Prominent warning that the web interface will no longer be reachable, switching
+  requires an explicit confirmation.
+- **Emergency reset**: switching the power off and on 3 times in a row (each within 10 s) resets the
+  operating mode to NAT.
+- The name of the bridge's WiFi can be changed in the web interface ("WiFi name").
+- Web interface in the access point modes: uplink info (bridge IP in the home network, gateway) and a
+  list of connected WiFi devices (IP, MAC, signal).
+
+### Changed
+- Access point modes can only be selected once a WiFi password is set.
+- When changing the setup WiFi settings, the password can be left empty to keep it.
+
 ## [2.4] – 2026-09-30
 
 ### Added

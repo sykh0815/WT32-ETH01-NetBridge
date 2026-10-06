@@ -115,7 +115,7 @@ The blue status bar at the bottom has three important icons:
 4. Click **🔌 Serial Monitor**. Among other things you'll see:
 
    ```
-   WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.4
+   WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.8
    Einrichtungsseite: http://192.168.4.1
    ```
 
@@ -149,7 +149,16 @@ monitor_port = /dev/cu.usbserial-0001
 3. Click **Search for WiFi networks**, tap your router's WiFi, enter the password and click
    **Save and connect**.
 4. Choose the operating mode: **NAT** (own network, several devices) or **Bridge** (IP directly
-   from the router, one device). After **Apply and restart** the bridge restarts.
+   from the router, one device). If the bridge should create its own WiFi instead, choose one of
+   the two **access point** modes and connect the LAN port to your router. After **Apply and
+   restart** the bridge restarts.
+
+   With the access point modes, the fields for the **WiFi name and password** of your new WiFi
+   appear right below the cards.
+
+   > **Access point (bridge):** afterwards the web interface is no longer at 192.168.4.1 but at the
+   > IP your router assigns to the bridge, e.g. `http://wt32-bridge.fritz.box`. If needed, use the
+   > emergency reset: switch the power off and on again 3 times in a row (each within 10 seconds).
 5. Connect the device to the LAN port with a network cable. Its IP and MAC address appear under
    "Device on the LAN port".
 
@@ -217,6 +226,11 @@ This is the WiFi network the bridge creates itself so you can reach the web inte
 | `LAN8720-Treiber konnte nicht gestartet werden` | check the board version (v1.4) and the power supply |
 | Compile errors about Ethernet functions | wrong platform: `platformio.ini` must use the pioarduino platform |
 | Old build leftovers | delete the `.pio` folder in the project and build again |
+| Web interface gone after switching to "Access point (bridge)" | it is now at the IP from the router: `http://wt32-bridge.fritz.box` or the router's device list ("wt32-bridge"); if needed, emergency reset (power off/on 3 times, each within 10 s) |
+| Setup WiFi barely responds at times | the bridge is searching for the router. Up to 2.6 this happened non-stop; from 2.6.1 only every 10–120 s. Check the router name, distance and 2.4 GHz; the web interface shows the reason |
+| Access point mode cannot be selected | set a WiFi password first |
+| Device has no internet after enabling the firewall | with "Everything else: block", allow DNS (UDP/TCP port 53) and the services you need with rules; the hit counters show which rule matches |
+| Locked out by the firewall | disable the firewall via the setup WiFi; in AP-NAT mode via the bridge IP in the home network; otherwise erase the flash |
 
 The **Serial Monitor** (115200 baud) shows what the bridge is doing. Its output also helps when
 you ask for help. The log messages are in German.

@@ -14,6 +14,85 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [2.8] – 06.10.2026
+
+### Neu
+- Option **„Offenes WLAN ohne Passwort“** als eigener Haken, sowohl in den WLAN-Einstellungen als
+  auch direkt bei den Access-Point-Betriebsarten. Ist er gesetzt, verschwinden die Passwortfelder und
+  eine rote Warnung erklärt die Risiken (jeder kann sich verbinden, unverschlüsselt, im Bridge-Modus
+  Zugriff aufs Heimnetz) mit dem Tipp, die Firewall einzuschalten.
+- Solange das WLAN bewusst offen ist, bleibt oben im Webinterface ein dauerhafter (nicht blinkender)
+  roter Hinweis sichtbar.
+
+### Geändert
+- Die Access-Point-Betriebsarten laufen jetzt auch mit offenem WLAN, aber nur, wenn es ausdrücklich so
+  gewählt wurde. Wird später ein Passwort gesetzt, ist das offene WLAN wieder aus.
+
+## [2.7] – 06.10.2026
+
+### Neu
+- WLAN-Name und Passwort des Access Points lassen sich direkt bei der Auswahl einer
+  Access-Point-Betriebsart eintragen (die Felder erscheinen unter den Karten); ein separater Schritt
+  ist nicht mehr nötig.
+- **Webinterface im Modus Access Point (Bridge)**: Die Bridge holt sich jetzt per DHCP eine eigene
+  Adresse vom Router und bleibt darüber erreichbar – aus dem Heimnetz und aus ihrem WLAN (z. B.
+  `http://wt32-bridge.fritz.box`). Frames an die Bridge selbst gehen an ihren eigenen TCP/IP-Stack,
+  alle anderen werden weiterhin durchgereicht.
+- Gerätename `wt32-bridge` im Router (Client- und Access-Point-Betriebsarten).
+
+### Geändert
+- Die Warnung beim Modus Access Point (Bridge) erklärt jetzt, wo das Webinterface zu finden ist,
+  statt zu sagen, dass es nicht mehr erreichbar ist.
+
+## [2.6.1] – 06.10.2026
+
+### Behoben
+- Das Einrichtungs-WLAN war kaum erreichbar (Paketverlust, Webinterface lud nicht), solange das
+  Router-WLAN nicht gefunden wurde: Die Bridge versuchte pausenlos neu zu verbinden, und jeder
+  Versuch durchsucht mit demselben Funkteil alle WLAN-Kanäle. Die Verbindungsversuche kommen jetzt mit
+  wachsendem Abstand (10 s, 20 s, 40 s … bis 120 s) und suchen, sobald der Router bekannt ist, nur auf
+  dessen Kanal; jeder dritte Versuch sucht auf allen Kanälen, falls der Router den Kanal gewechselt
+  hat.
+
+### Neu
+- Das Webinterface zeigt, warum die Verbindung zum Router scheitert (nicht gefunden / Passwort falsch)
+  und wann der nächste Versuch folgt.
+
+## [2.6] – 05.10.2026
+
+### Neu
+- **Einfache Firewall** (Abschnitt „Firewall“ im Webinterface, gilt sofort):
+  - Schalter: „Nur Internet, kein Heimnetz“, „Webinterface der Bridge sperren“, „WLAN-Geräte
+    voneinander trennen“ (Access-Point-Betriebsarten).
+  - Bis zu 16 eigene Regeln: sperren/erlauben, Protokoll, Ziel-IP/-Netz, Port/Portbereich,
+    Trefferzähler.
+  - Grundregel für alles andere: erlauben oder sperren.
+  - MAC-Liste für die Access-Point-Betriebsarten; verhindert das Selbstaussperren.
+  - IPv6 wird bei aktiver Firewall gesperrt; Zähler für gesperrte Pakete.
+- In den Bridge-Betriebsarten werden Router und DNS aus DHCP gelernt, damit sie bei „Nur Internet“
+  erreichbar bleiben.
+
+## [2.5] – 05.10.2026
+
+### Neu
+- **Access Point – eigenes WLAN-Netz (NAT)**: LAN-Port als Uplink zum Router (DHCP-Client), eigenes
+  WLAN mit DHCP und NAT für bis zu ca. 8 Geräte, der DNS-Server des Routers wird weitergegeben. Das
+  Webinterface bleibt unter `192.168.4.1` und über die IP der Bridge im Heimnetz erreichbar.
+- **Access Point – WLAN direkt im Heimnetz (Bridge)**: Weiterleitung auf Ebene 2 zwischen Ethernet
+  und Access Point (wie Espressifs `eth2ap`); die WLAN-Geräte bekommen ihre Adressen vom Router.
+  Auffällige Warnung, dass das Webinterface danach nicht mehr erreichbar ist; das Umschalten
+  verlangt eine ausdrückliche Bestätigung.
+- **Notfall-Reset**: 3-mal hintereinander Strom aus/an (jeweils innerhalb von 10 s) setzt die
+  Betriebsart auf NAT zurück.
+- Der Name des WLANs der Bridge lässt sich im Webinterface ändern („WLAN-Name“).
+- Webinterface in den Access-Point-Betriebsarten: Uplink-Infos (IP der Bridge im Heimnetz, Gateway)
+  und Liste der verbundenen WLAN-Geräte (IP, MAC, Signal).
+
+### Geändert
+- Die Access-Point-Betriebsarten lassen sich erst wählen, wenn ein WLAN-Passwort gesetzt ist.
+- Beim Ändern der WLAN-Einstellungen kann das Passwortfeld leer bleiben, dann bleibt das bisherige
+  Passwort erhalten.
+
 ## [2.4] – 30.09.2026
 
 ### Neu

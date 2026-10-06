@@ -2,13 +2,13 @@
 
 🇬🇧 [English](README.md) | 🇩🇪 **Deutsch**
 
-[![Version](https://img.shields.io/badge/Version-2.4-1263a6)](CHANGELOG.de.md)
+[![Version](https://img.shields.io/badge/Version-2.8-1263a6)](CHANGELOG.de.md)
 [![Plattform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#bauen-und-flashen)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 2.4** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
+**Version 2.8** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
 
 Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die ein Gerät mit LAN-Anschluss per WLAN
 ins Netzwerk bringt: ein **WLAN-Adapter für Geräte ohne WLAN** oder eine **WLAN-Bridge für den
@@ -36,12 +36,21 @@ des Einrichtungs-WLANs.
 
 ## Funktionen
 
-- **Zwei Betriebsarten**, umschaltbar im Webinterface:
+- **Vier Betriebsarten**, umschaltbar im Webinterface:
   - **NAT – eigenes Netzwerk** (Standard): eigenes Netz `192.168.50.0/24` am LAN-Port mit
     DHCP-Server, Internetfreigabe über NAPT. Mehrere Geräte möglich (z. B. über einen Switch).
     Datenrate bis ca. 10 Mbit/s.
   - **Bridge – direkt ins Heimnetz** (experimentell): Das LAN-Gerät bekommt seine IP **direkt vom
     Router**. Nur ein Gerät, nur IPv4. Datenrate über 30 Mbit/s (Details siehe unten).
+  - **Access Point – eigenes WLAN-Netz (NAT)**: Der LAN-Port geht zum Router, die Bridge spannt ein
+    eigenes WLAN (`192.168.4.x`) für bis zu ca. 8 Geräte auf. Das Webinterface bleibt erreichbar.
+  - **Access Point – WLAN direkt im Heimnetz (Bridge)**: WLAN-Geräte bekommen ihre IP direkt vom
+    Router. Das Webinterface ist dann über die IP erreichbar, die der Router der Bridge gibt
+    (z. B. `http://wt32-bridge.fritz.box`).
+- **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt die Betriebsart auf NAT zurück.
+- **Einfache Firewall** für die angeschlossenen Geräte: „Nur Internet, kein Heimnetz“, Webinterface
+  sperren, WLAN-Geräte trennen, bis zu 16 eigene Regeln mit Trefferzähler, MAC-Liste in den
+  Access-Point-Betriebsarten.
 - **Webinterface** auf **Deutsch und Englisch** (umschaltbar per Flaggen-Button) über ein eigenes
   Einrichtungs-WLAN (Passwort im Webinterface änderbar):
   - WLAN-Suche und Eingabe der Router-Zugangsdaten
@@ -122,6 +131,11 @@ Die Bridge kennt zwei Passwörter:
 | **Einrichtungs-WLAN** `WT32-Bridge-Setup` (anfangs **offen**, ohne Passwort) | im Flash des ESP32 (NVS); ein optionaler Standardwert lässt sich in `SETUP_AP_PASSWORD` in `src/main.cpp` setzen | im Webinterface unter „Einrichtungs-WLAN“ (8–63 Zeichen), die Bridge startet danach neu |
 | **Router-WLAN** | im Flash des ESP32 (NVS), nicht im Code | im Webinterface unter „Router-WLAN“ neu eingeben und „Speichern und verbinden“ |
 
+> **Bewusst offenes WLAN:** In den WLAN-Einstellungen (und bei den Access-Point-Betriebsarten) lässt
+> sich „Offenes WLAN ohne Passwort“ anhaken, z. B. für ein Gäste-WLAN. Eine rote Warnung erklärt die
+> Risiken und bleibt oben im Webinterface sichtbar; am besten mit der Firewall kombinieren („Nur
+> Internet“, „Webinterface sperren“).
+
 > **Wichtig:** Beim ersten Start ist das Einrichtungs-WLAN offen, jeder in Reichweite könnte die
 > Einstellungen ändern. Das Webinterface zeigt eine auffällige rote Warnung, bis ein Passwort gesetzt
 > ist. Lege es direkt nach der Einrichtung fest. Details: [Tutorial, Abschnitt WLAN-Passwörter](docs/TUTORIAL.de.md#7-wlan-passwörter-finden-und-ändern).
@@ -159,6 +173,53 @@ Einschränkungen:
 - nach dem Umschalten der Betriebsart am LAN-Gerät kurz das Kabel ziehen, damit es eine neue
   Adresse holt
 
+### Access Point – eigenes WLAN-Netz (NAT)
+
+Den LAN-Port mit dem Router verbinden. Die Bridge holt sich per DHCP eine Adresse vom Router und
+spannt ein eigenes WLAN auf (Name und Passwort aus dem Abschnitt „Einrichtungs-WLAN“). Die
+WLAN-Geräte bekommen Adressen im Netz `192.168.4.x`; als DNS dient der DNS-Server des Routers. Das
+Webinterface bleibt unter `192.168.4.1` und über die IP der Bridge im Heimnetz erreichbar.
+
+- bis ca. 8 WLAN-Geräte, nur 2,4 GHz, die Datenrate teilen sich alle Geräte
+- vor dem Umschalten muss ein WLAN-Passwort festgelegt sein
+
+### Access Point – WLAN direkt im Heimnetz (Bridge)
+
+Den LAN-Port mit dem Router verbinden. Die Frames werden auf Ebene 2 zwischen Ethernet und dem
+WLAN-Access-Point weitergereicht (wie in Espressifs Beispiel
+[`eth2ap`](https://github.com/espressif/esp-idf/tree/master/examples/network/eth2ap)). Die
+WLAN-Geräte bekommen ihre Adressen direkt vom Router und sind im Heimnetz sichtbar (AirPlay,
+Chromecast, Drucker).
+
+> **Hinweis:** In dieser Betriebsart ist das Webinterface **nicht mehr unter 192.168.4.1** erreichbar.
+> Die Bridge holt sich per DHCP eine eigene Adresse vom Router (Gerätename `wt32-bridge`); unter dieser
+> Adresse ist das Webinterface erreichbar – aus dem Heimnetz und aus dem WLAN der Bridge, z. B.
+> `http://wt32-bridge.fritz.box` oder die IP aus der Geräteliste des Routers. Vor dem Umschalten fragt
+> das Webinterface nach einer Bestätigung.
+>
+> **Zurück zur Einrichtung (Notfall-Reset):** die Stromversorgung **3-mal hintereinander** kurz aus-
+> und wieder einschalten, jeweils innerhalb von 10 Sekunden. Danach startet die Bridge im NAT-Modus mit
+> dem Einrichtungs-WLAN; alle anderen Einstellungen bleiben erhalten.
+
+## Firewall
+
+Abschnitt „Firewall“ im Webinterface. Sie prüft den Datenverkehr der **angeschlossenen Geräte**
+(Gerät am LAN-Port bzw. die WLAN-Geräte in den Access-Point-Betriebsarten). Änderungen gelten sofort,
+ein Neustart ist nicht nötig.
+
+| Einstellung | Wirkung |
+|-------------|---------|
+| Nur Internet, kein Heimnetz | sperrt private Adressen (10.x, 172.16–31.x, 192.168.x, Multicast); DHCP, DNS und Ping zum Router bleiben erlaubt. In den Bridge-Betriebsarten werden zusätzlich Verbindungen aus dem Heimnetz zum Gerät gesperrt. |
+| Webinterface der Bridge sperren | angeschlossene Geräte können die Einstellungsseite nicht öffnen |
+| WLAN-Geräte trennen (AP-Betriebsarten) | die WLAN-Geräte der Bridge erreichen sich gegenseitig nicht |
+| Eigene Regeln (bis zu 16) | sperren/erlauben, Protokoll (alle/TCP/UDP/ICMP), Ziel-IP oder -Netz, Port oder Portbereich; die erste passende Regel entscheidet; Trefferzähler je Regel |
+| Alles andere | erlauben (Standard) oder sperren |
+| MAC-Filter (AP-Betriebsarten) | nur eingetragene WLAN-Geräte dürfen sich verbinden; schützt vor dem Selbstaussperren |
+
+Grenzen: zustandslos (keine Verbindungsverfolgung; in den NAT-Betriebsarten blockiert NAT ohnehin
+unaufgeforderte Verbindungen von außen), nur IPv4 (IPv6 wird bei aktiver Firewall gesperrt), nur
+IP-Adressen, keine Domainnamen.
+
 ## Projektstruktur
 
 ```
@@ -178,7 +239,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **2.4** – Webinterface auf Deutsch und Englisch mit Sprachumschalter.
+Aktuelle Version: **2.8** – optional offenes WLAN ohne Passwort (mit sichtbarer Warnung).
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

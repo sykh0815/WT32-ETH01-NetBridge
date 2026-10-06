@@ -117,7 +117,7 @@ In der blauen Statusleiste unten gibt es drei wichtige Symbole:
 4. Auf **🔌 Serial Monitor** klicken. Es erscheint unter anderem:
 
    ```
-   WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.4
+   WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.8
    Einrichtungsseite: http://192.168.4.1
    ```
 
@@ -152,7 +152,17 @@ monitor_port = /dev/cu.usbserial-0001
 3. **Verfügbare WLANs suchen**, dein Router-WLAN antippen, Passwort eingeben,
    **Speichern und verbinden**.
 4. Betriebsart wählen: **NAT** (eigenes Netz, mehrere Geräte) oder **Bridge** (IP direkt vom
-   Router, ein Gerät). Nach **Übernehmen und neu starten** startet die Bridge neu.
+   Router, ein Gerät). Soll die Bridge stattdessen selbst ein WLAN aufspannen, eine der beiden
+   **Access-Point**-Betriebsarten wählen und den LAN-Port mit dem Router verbinden. Nach
+   **Übernehmen und neu starten** startet die Bridge neu.
+
+   Bei den Access-Point-Betriebsarten erscheinen direkt unter den Karten die Felder für
+   **WLAN-Name und Passwort** deines neuen WLANs.
+
+   > **Access Point (Bridge):** Danach ist das Webinterface nicht mehr unter 192.168.4.1 erreichbar,
+   > sondern unter der IP, die der Router der Bridge gibt, z. B. `http://wt32-bridge.fritz.box`.
+   > Notfalls hilft der Notfall-Reset: Stromversorgung 3-mal hintereinander kurz aus- und wieder
+   > einschalten (jeweils innerhalb von 10 Sekunden).
 5. Das Gerät per Netzwerkkabel am LAN-Port anschließen. Unter „Gerät am LAN-Port“ erscheinen
    IP- und MAC-Adresse.
 
@@ -221,6 +231,11 @@ Das ist das WLAN, das die Bridge selbst aufspannt, damit du das Webinterface err
 | `LAN8720-Treiber konnte nicht gestartet werden` | Board-Version prüfen (v1.4), Stromversorgung prüfen |
 | Kompilierfehler zu Ethernet-Funktionen | falsche Plattform: in `platformio.ini` muss die pioarduino-Plattform stehen |
 | Alte Build-Reste | Ordner `.pio` im Projekt löschen und neu kompilieren |
+| Webinterface nach Wechsel auf „Access Point (Bridge)“ weg | es liegt jetzt unter der IP vom Router: `http://wt32-bridge.fritz.box` oder Geräteliste des Routers („wt32-bridge“); notfalls Notfall-Reset (3-mal Strom aus/an, jeweils innerhalb von 10 s) |
+| Einrichtungs-WLAN reagiert zeitweise kaum | die Bridge sucht gerade den Router. Bis 2.6 geschah das pausenlos; ab 2.6.1 nur noch alle 10–120 s. Router-Namen, Abstand und 2,4 GHz prüfen; das Webinterface zeigt den Grund an |
+| Access-Point-Betriebsart lässt sich nicht wählen | zuerst ein WLAN-Passwort festlegen |
+| Gerät kommt nach Aktivieren der Firewall nicht mehr ins Internet | bei „Alles andere: sperren“ DNS (UDP/TCP Port 53) und die gewünschten Dienste per Regel erlauben; Trefferzähler zeigen, welche Regel greift |
+| Ausgesperrt durch Firewall | Firewall über das Einrichtungs-WLAN abschalten; im AP-NAT-Modus über die IP der Bridge im Heimnetz; sonst Flash löschen |
 
 Im **Serial Monitor** (115200 Baud) siehst du, was die Bridge gerade macht. Diese Ausgabe hilft
 auch, wenn du Hilfe suchst.
