@@ -34,6 +34,15 @@ solange das Einrichtungs-WLAN kein Passwort hat, WLAN-Empfang, Daten des Geräts
 (IP-Adresse vom Router, Link-Geschwindigkeit, Paketzähler), Router-WLAN, Betriebsart und Passwort
 des Einrichtungs-WLANs.
 
+## Screenshots
+
+Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)**.
+
+<table>
+<tr><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/01-status-nat.png' width='240' alt='Status im NAT-Modus'></a><br><sub>Status im NAT-Modus</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/04-operating-modes.png' width='240' alt='Betriebsarten'></a><br><sub>Betriebsarten</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/06-firewall.png' width='240' alt='Firewall'></a><br><sub>Firewall</sub></td></tr>
+<tr><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/05-access-point-setup.png' width='240' alt='Access Point einrichten'></a><br><sub>Access Point einrichten</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/07-status-access-point.png' width='240' alt='Status im Access-Point-Modus'></a><br><sub>Status im Access-Point-Modus</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/08-open-wifi.png' width='240' alt='Bewusst offenes WLAN'></a><br><sub>Bewusst offenes WLAN</sub></td></tr>
+</table>
+
 ## Funktionen
 
 - **Vier Betriebsarten**, umschaltbar im Webinterface:
@@ -227,7 +236,8 @@ platformio.ini            Build-Konfiguration
 src/main.cpp              Firmware
 docs/TUTORIAL.de.md       Tutorial: Kompilieren und Flashen (Deutsch)
 docs/TUTORIAL.en.md       Tutorial: build and flash (English)
-docs/webinterface-v2.4.png Screenshot des Webinterface
+docs/webinterface-v2.4.png Screenshot des Webinterface (echtes Gerät)
+docs/SCREENSHOTS.de.md    Screenshot-Album (DE), docs/screenshots/en|de/
 docs/wt32-eth01.svg       Illustration des Boards
 docs/social-preview.png   Vorschaubild für GitHub
 CHANGELOG.de.md           Änderungsprotokoll (Deutsch)

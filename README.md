@@ -35,6 +35,15 @@ the router, link speed, packet counters), router WiFi, operating mode and setup 
 The interface is available in English and German and can be switched with the flag buttons at the
 top right.
 
+## Screenshots
+
+All screenshots with descriptions: **[screenshot album](docs/SCREENSHOTS.md)**.
+
+<table>
+<tr><td align='center' width='33%'><a href='docs/SCREENSHOTS.md'><img src='docs/screenshots/en/01-status-nat.png' width='240' alt='Status in NAT mode'></a><br><sub>Status in NAT mode</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.md'><img src='docs/screenshots/en/04-operating-modes.png' width='240' alt='Operating modes'></a><br><sub>Operating modes</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.md'><img src='docs/screenshots/en/06-firewall.png' width='240' alt='Firewall'></a><br><sub>Firewall</sub></td></tr>
+<tr><td align='center' width='33%'><a href='docs/SCREENSHOTS.md'><img src='docs/screenshots/en/05-access-point-setup.png' width='240' alt='Access point setup'></a><br><sub>Access point setup</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.md'><img src='docs/screenshots/en/07-status-access-point.png' width='240' alt='Status in access point mode'></a><br><sub>Status in access point mode</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.md'><img src='docs/screenshots/en/08-open-wifi.png' width='240' alt='Open WiFi (on purpose)'></a><br><sub>Open WiFi (on purpose)</sub></td></tr>
+</table>
+
 ## Features
 
 - **Four operating modes**, selectable in the web interface:
@@ -227,7 +236,8 @@ platformio.ini            build configuration
 src/main.cpp              firmware
 docs/TUTORIAL.en.md       tutorial: build and flash (English)
 docs/TUTORIAL.de.md       Tutorial: Kompilieren und Flashen (Deutsch)
-docs/webinterface-v2.4.png screenshot of the web interface
+docs/webinterface-v2.4.png screenshot of the web interface (real device)
+docs/SCREENSHOTS.md       screenshot album (EN), docs/screenshots/en|de/
 docs/wt32-eth01.svg       board illustration
 docs/social-preview.png   GitHub preview image
 tools/release.sh          builds the firmware and creates a GitHub release
