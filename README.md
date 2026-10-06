@@ -20,7 +20,7 @@ Ethernet and WiFi in both directions:
   access point, guest WiFi or WiFi extension, optionally with a firewall.
 
 <p align="center">
-  <img src="docs/wt32-eth01.svg" alt="WT32-ETH01 board with RJ45 jack, LAN8720 PHY and ESP32 module (illustration)" width="480">
+  <img src="docs/netbridge-banner.png" alt="WT32 NetBridge – Ethernet ⇄ WiFi for WT32-ETH01: WiFi client or access point, NAT or bridge, firewall" width="760">
 </p>
 
 ```
@@ -245,6 +245,7 @@ docs/TUTORIAL.en.md       tutorial: build and flash (English)
 docs/TUTORIAL.de.md       Tutorial: Kompilieren und Flashen (Deutsch)
 docs/webinterface-v2.4.png screenshot of the web interface (real device)
 docs/SCREENSHOTS.md       screenshot album (EN), docs/screenshots/en|de/
+docs/netbridge-banner.png banner on the start page
 docs/wt32-eth01.svg       board illustration
 docs/social-preview.png   GitHub preview image
 tools/release.sh          builds the firmware and creates a GitHub release

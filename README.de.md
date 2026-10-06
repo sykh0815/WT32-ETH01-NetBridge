@@ -19,7 +19,7 @@ WLAN in beide Richtungen verbindet:
   Access Point, Gäste-WLAN oder WLAN-Erweiterung, auf Wunsch mit Firewall.
 
 <p align="center">
-  <img src="docs/wt32-eth01.svg" alt="WT32-ETH01 Board mit RJ45-Buchse, LAN8720 PHY und ESP32-Modul (Illustration)" width="480">
+  <img src="docs/netbridge-banner.png" alt="WT32 NetBridge – Ethernet ⇄ WLAN für den WT32-ETH01: WLAN-Client oder Access Point, NAT oder Bridge, Firewall" width="760">
 </p>
 
 ```
@@ -245,6 +245,7 @@ docs/TUTORIAL.de.md       Tutorial: Kompilieren und Flashen (Deutsch)
 docs/TUTORIAL.en.md       Tutorial: build and flash (English)
 docs/webinterface-v2.4.png Screenshot des Webinterface (echtes Gerät)
 docs/SCREENSHOTS.de.md    Screenshot-Album (DE), docs/screenshots/en|de/
+docs/netbridge-banner.png Banner auf der Startseite
 docs/wt32-eth01.svg       Illustration des Boards
 docs/social-preview.png   Vorschaubild für GitHub
 CHANGELOG.de.md           Änderungsprotokoll (Deutsch)
