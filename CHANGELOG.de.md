@@ -14,6 +14,20 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.2] – 06.10.2026
+
+### Neu
+- **Optionaler Passwortschutz für das Webinterface** (Abschnitt „Passwort für dieses Webinterface“).
+  Ist ein Passwort gesetzt, fragt jede Seite auf einer Anmeldeseite danach; danach bleibt der Browser
+  über ein zufälliges Sitzungs-Cookie angemeldet (24 Stunden ohne Nutzung, Knopf „Abmelden“).
+  Gespeichert wird nur ein gesalzener SHA-256-Hash des Passworts. Nach 5 Fehlversuchen ist die
+  Anmeldung eine Minute gesperrt.
+- In den Access-Point-Betriebsarten weist ein Hinweis oben auf der Seite auf ein fehlendes Passwort
+  hin, weil das Webinterface dort auch aus dem Heimnetz erreichbar ist.
+
+### Geändert
+- Der **Notfall-Reset** (3-mal Strom aus/an) entfernt jetzt auch das Passwort des Webinterface.
+
 ## [3.1] – 06.10.2026
 
 ### Neu

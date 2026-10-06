@@ -62,7 +62,11 @@ All screenshots with descriptions: **[screenshot album](docs/SCREENSHOTS.md)**.
   - **Access point – WiFi straight into your home network (bridge)**: WiFi devices get their IP
     directly from your router. The web interface is then reachable via the IP the router assigns to
     the bridge (e.g. `http://wt32-eth01-netbridge.fritz.box`).
-- **Emergency reset**: switching the power off and on 3 times in a row returns to NAT mode.
+- **Password protection for the web interface** (optional): login page, session cookie, only a salted
+  hash of the password is stored. Recommended in the access point modes, where the web interface is
+  also reachable from the home network.
+- **Emergency reset**: switching the power off and on 3 times in a row returns to NAT mode and removes
+  the web interface password.
 - **Simple firewall** for the connected devices: "Internet only, no home network", block the web
   interface, isolate WiFi devices, up to 16 custom rules with hit counters, MAC allow list in the
   access point modes.
@@ -216,8 +220,8 @@ devices get their addresses directly from your router and are visible in the hom
 > switching.
 >
 > **Back to setup (emergency reset):** switch the power off and on again **3 times in a row**, each
-> time within 10 seconds. The bridge then starts in NAT mode with the setup WiFi; all other settings
-> are kept.
+> time within 10 seconds. The bridge then starts in NAT mode with the setup WiFi and the web interface
+> password is removed; all other settings are kept.
 
 ## Firewall
 
@@ -262,7 +266,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **3.1** – shows device names, manufacturers and remaining DHCP lease time of connected devices.
+Current version: **3.2** – optional password protection for the web interface.
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 

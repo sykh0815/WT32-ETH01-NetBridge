@@ -12,6 +12,8 @@
 #include <dhcpserver/dhcpserver.h>
 #include <freertos/queue.h>
 #include <esp_system.h>
+#include <esp_random.h>
+#include <mbedtls/sha256.h>
 #include "oui_table.h"
 
 // Zwei Betriebsarten (Umschaltung im Webinterface, danach Neustart):
@@ -75,10 +77,12 @@ String firewallSectionHtml();
 String firewallStatusJson();
 void fwLoad();
 void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData);
+bool webPasswordSet();
+String webPasswordSectionHtml();
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.1";
+constexpr char FIRMWARE_VERSION[] = "3.2";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -937,7 +941,7 @@ String languageSwitchHtml() {
 // ---------------------------------------------------------------------------
 
 String pageHeader(const String &title) {
-  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:auto 1fr 1fr 2fr 1fr 3em;gap:6px;align-items:center;margin-top:6px}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input[type=checkbox]{width:auto}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}@media(max-width:600px){.fwrule{grid-template-columns:auto 1fr 1fr}.fwrule input[name$=_dst]{grid-column:span 2}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}.cl{padding:9px 0;border-top:1px solid #d6e2ee}.cl:first-child{border-top:0}.cl div{display:flex;justify-content:space-between;gap:10px}.cl div span{color:#4b5865}.cl small{display:block;margin-top:3px}.mini{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px}.mini .bar{width:4px;border-radius:1px}</style></head><body><div class='card'>";
+  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:auto 1fr 1fr 2fr 1fr 3em;gap:6px;align-items:center;margin-top:6px}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input[type=checkbox]{width:auto}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}@media(max-width:600px){.fwrule{grid-template-columns:auto 1fr 1fr}.fwrule input[name$=_dst]{grid-column:span 2}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}form:has(input[name=web_off]:checked) .pwfields{display:none}.card>.dangerbox{margin:0 0 16px}.dangerbox a{color:#7a1414;font-weight:bold}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}.cl{padding:9px 0;border-top:1px solid #d6e2ee}.cl:first-child{border-top:0}.cl div{display:flex;justify-content:space-between;gap:10px}.cl div span{color:#4b5865}.cl small{display:block;margin-top:3px}.mini{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px}.mini .bar{width:4px;border-radius:1px}</style></head><body><div class='card'>";
 }
 
 String pageFooter() { return "</div></body></html>"; }
@@ -1120,7 +1124,7 @@ const char *const JS_TEXT_DE = "var L={notConnected:'Nicht mit dem Router verbun
   "scanFail:'Die WLAN-Suche ist fehlgeschlagen. Bitte erneut versuchen.',none:'Keine WLANs gefunden.',hidden:'(verstecktes WLAN)',secured:' (gesichert)',"
   "selected:'Ausgew\\u00e4hlt: ',mismatch:'Die beiden Eingaben stimmen nicht \\u00fcberein.',confirmPw:'Passwort \\u00e4ndern? Die Bridge startet danach neu.',noUplink:'Kein Kabel erkannt. Verbinde den LAN-Port mit deinem Router.',homeIp:'IP der Bridge im Heimnetz',gateway:'Gateway',waitingIp:'wartet auf Adresse vom Router',noClients:'Noch keine WLAN-Ger\\u00e4te verbunden.',ackNeeded:'Bitte best\\u00e4tige den Hinweis zum Webinterface.',add:'zur Liste',pwNeeded:'Bitte ein WLAN-Passwort f\\u00fcr den Access Point festlegen (mindestens 8 Zeichen).',nextTry:'n\\u00e4chster Versuch in',"
   "name:'Ger\\u00e4tename',vendor:'Hersteller',noVendor:'Hersteller unbekannt',privMac:'Private MAC',privHint:'Zuf\\u00e4llige Adresse zum Schutz der Privatsph\\u00e4re \\u2013 der Hersteller ist daran nicht erkennbar.',"
-  "connFor:'verbunden seit',leaseShort:'Adresse g\\u00fcltig noch',leaseLeft:'Adresse g\\u00fcltig noch',expired:'abgelaufen'};";
+  "connFor:'verbunden seit',leaseShort:'Adresse g\\u00fcltig noch',leaseLeft:'Adresse g\\u00fcltig noch',expired:'abgelaufen',webPwShort:'Das Passwort muss mindestens 8 Zeichen lang sein.'};";
 const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router',noCable:'No cable detected. Plug the cable firmly into the device and the bridge.',"
   "link:'Link',full:'full duplex',half:'half duplex',since:'Cable connected for',device:'Device',notDetected:'not detected yet (not sending anything)',"
   "noLease:'none assigned via DHCP yet',ip:'IP address',unknown:'not known yet',mac:'MAC address',seen:'Detected',assigned:'Address assigned',ago:' ago',"
@@ -1129,7 +1133,7 @@ const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router
   "scanFail:'The WiFi scan failed. Please try again.',none:'No WiFi networks found.',hidden:'(hidden network)',secured:' (secured)',"
   "selected:'Selected: ',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.',noUplink:'No cable detected. Connect the LAN port to your router.',homeIp:'Bridge IP in the home network',gateway:'Gateway',waitingIp:'waiting for an address from the router',noClients:'No WiFi devices connected yet.',ackNeeded:'Please confirm the note about the web interface.',add:'add to list',pwNeeded:'Please set a WiFi password for the access point (at least 8 characters).',nextTry:'next attempt in',"
   "name:'Device name',vendor:'Manufacturer',noVendor:'unknown manufacturer',privMac:'Private MAC',privHint:'Randomized address for privacy \\u2013 the manufacturer cannot be derived from it.',"
-  "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired'};";
+  "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired',webPwShort:'The password must be at least 8 characters long.'};";
 
 // Alle 10 s eine Diagnosezeile im seriellen Log (hilft bei Verbindungsproblemen)
 void logDiagnostics() {
@@ -1212,7 +1216,7 @@ void showHome() {
   }
 
   const String script = String("<script>") + (uiEnglish ? JS_TEXT_EN : JS_TEXT_DE) +
-    "function status(){fetch('/status').then(r=>r.json()).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);showClients(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+(w.name?w.name+' \\u2013 ':'')+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{let t=w.name||w.ip||w.mac,d=[t!=w.mac?w.mac:'',maker(w)].filter(x=>x).join(' \\u00b7 '),x=bars(w.rssi)+' '+w.rssi+' dBm'+(w.phy?' \\u00b7 '+w.phy:'')+(w.since!=null?' \\u00b7 '+L.connFor+' '+short(w.since):'')+(w.leaseLeft!=null?' \\u00b7 '+L.leaseShort+' '+(w.leaseLeft?short(w.leaseLeft):L.expired):'');h+='<div class=\\'cl\\'><div><b>'+esc(t)+'</b>'+(w.name&&w.ip?'<span>'+w.ip+'</span>':'')+'</div><small>'+d+'</small><small>'+x+'</small></div>';});c.innerHTML=h;}function esc(t){return String(t).replace(/[&<>\"']/g,c=>'&#'+c.charCodeAt(0)+';');}function short(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60);return h?h+' h '+m+' min':m?m+' min':t+' s';}function maker(w){return w.vendor?esc(w.vendor):w.private?'<span title=\\''+L.privHint+'\\'>'+L.privMac+'</span>':L.noVendor;}function bars(r){let p=Math.max(0,Math.min(100,(r+90)*100/60)),n=Math.ceil(p/25),q=p<35?'weak':p<65?'fair':'good',h='<span class=\\'mini\\'>';for(let i=0;i<4;i++)h+='<i class=\\'bar'+(i<n?' on '+q:'')+'\\' style=\\'height:'+(i+1)*25+'%\\'></i>';return h+'</span>';}"
+    "function status(){fetch('/status').then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);showClients(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+(w.name?w.name+' \\u2013 ':'')+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{let t=w.name||w.ip||w.mac,d=[t!=w.mac?w.mac:'',maker(w)].filter(x=>x).join(' \\u00b7 '),x=bars(w.rssi)+' '+w.rssi+' dBm'+(w.phy?' \\u00b7 '+w.phy:'')+(w.since!=null?' \\u00b7 '+L.connFor+' '+short(w.since):'')+(w.leaseLeft!=null?' \\u00b7 '+L.leaseShort+' '+(w.leaseLeft?short(w.leaseLeft):L.expired):'');h+='<div class=\\'cl\\'><div><b>'+esc(t)+'</b>'+(w.name&&w.ip?'<span>'+w.ip+'</span>':'')+'</div><small>'+d+'</small><small>'+x+'</small></div>';});c.innerHTML=h;}function esc(t){return String(t).replace(/[&<>\"']/g,c=>'&#'+c.charCodeAt(0)+';');}function short(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60);return h?h+' h '+m+' min':m?m+' min':t+' s';}function maker(w){return w.vendor?esc(w.vendor):w.private?'<span title=\\''+L.privHint+'\\'>'+L.privMac+'</span>':L.noVendor;}function bars(r){let p=Math.max(0,Math.min(100,(r+90)*100/60)),n=Math.ceil(p/25),q=p<35?'weak':p<65?'fair':'good',h='<span class=\\'mini\\'>';for(let i=0;i<4;i++)h+='<i class=\\'bar'+(i<n?' on '+q:'')+'\\' style=\\'height:'+(i+1)*25+'%\\'></i>';return h+'</span>';}"
     "function dur(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return (h?h+' h ':'')+(h||m?m+' min ':'')+x+' s';}"
     "function row(k,v){return '<tr><td>'+k+'</td><td><b>'+v+'</b></td></tr>';}"
     "function showLan(s){let l=s.lan,br=s.mode=='bridge',ap=!!s.uplink,box=document.getElementById('lanInfo'),h='';"
@@ -1224,7 +1228,7 @@ void showHome() {
     "else{h+=row(L.gw,'192.168.50.1 / 1.1.1.1');if(l.leaseMinutes)h+=row(L.lease,l.leaseMinutes+' min');if(l.bridgeMac)h+=row(L.bridgeMac,l.bridgeMac);}"
     "box.innerHTML='<table class=\\'info\\'>'+h+'</table>';}"
     "function scan(){document.getElementById('networks').textContent=L.searching;poll(true,0);}"
-    "function poll(start,errors){fetch('/networks'+(start?'?start=1':'')).then(r=>r.json()).then(s=>{"
+    "function poll(start,errors){fetch('/networks'+(start?'?start=1':'')).then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{"
     "if(s.state=='running'){setTimeout(()=>poll(false,0),800);return;}"
     "if(s.state!='done'){document.getElementById('networks').textContent=L.scanFail;return;}"
     "showNetworks(s.networks);}).catch(()=>{if(errors<8)setTimeout(()=>poll(false,errors+1),1500);else document.getElementById('networks').textContent=L.scanFail;});}"
@@ -1332,7 +1336,14 @@ void showHome() {
       T("Jetzt Passwort festlegen &darr;", "Set a password now &darr;") + "</a></div></div>";
   }
   if (recoveryTriggered) {
-    apAlert += String("<p class='bad'><b>") + T("Notfall-Reset ausgef&uuml;hrt:", "Emergency reset performed:") + "</b> " + T("Die Betriebsart wurde auf NAT zur&uuml;ckgesetzt.", "The operating mode was reset to NAT.") + "</p>";
+    apAlert += String("<p class='bad'><b>") + T("Notfall-Reset ausgef&uuml;hrt:", "Emergency reset performed:") + "</b> " + T("Die Betriebsart wurde auf NAT zur&uuml;ckgesetzt und der Passwortschutz des Webinterface entfernt.", "The operating mode was reset to NAT and the web interface password protection was removed.") + "</p>";
+  }
+  if (apMode && !webPasswordSet()) {
+    // In den Access-Point-Modi ist das Webinterface auch aus dem Heimnetz erreichbar
+    apAlert += String("<div class='dangerbox'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='4' y='10' width='16' height='11' rx='2'/><path d='M8 10V7a4 4 0 0 1 7.5-2'/></svg><div><b>") +
+      T("Webinterface ohne Passwort", "Web interface without password") + "</b><br>" +
+      T("Jeder in deinem Heimnetz und in diesem WLAN kann diese Seite &ouml;ffnen und die Einstellungen &auml;ndern.", "Anyone in your home network and in this WiFi can open this page and change the settings.") +
+      " <a href='#webpw'>" + T("Passwort festlegen &darr;", "Set a password &darr;") + "</a></div></div>";
   }
 
   String footer;
@@ -1355,7 +1366,7 @@ void showHome() {
     "<h1>" + PRODUCT_NAME + " <small class='sub'>" + T("Ethernet &#8644; WLAN", "Ethernet &#8644; WiFi") + "</small></h1>" + apAlert + routerState + (apMode ? String("") : signalMeterHtml()) + ethernetState + linkState +
     (bridgeMode == MODE_AP_BRIDGE ? String("") : String("<p>") + (apMode ? T("Diese Seite ist im WLAN erreichbar unter ", "This page is reachable in the WiFi at ") : T("Diese Seite bleibt &uuml;ber das Einrichtungs-WLAN erreichbar: ", "This page stays reachable through the setup WiFi: ")) + "<b>192.168.4.1</b>.</p>") +
     // In den Access-Point-Modi stehen Name und Passwort direkt bei der Betriebsart; der separate Abschnitt entfaellt
-    routerSection + modeForm + firewallSectionHtml() + (apMode ? String("") : apForm) + footer + "<p><small>" + T("Firmware-Version ", "Firmware version ") + FIRMWARE_VERSION + "</small></p>" + script + pageFooter();
+    routerSection + modeForm + firewallSectionHtml() + (apMode ? String("") : apForm) + webPasswordSectionHtml() + footer + "<p><small>" + T("Firmware-Version ", "Firmware version ") + FIRMWARE_VERSION + "</small></p>" + script + pageFooter();
   webServer.send(200, "text/html; charset=utf-8", html);
 }
 
@@ -1594,6 +1605,248 @@ void saveApPassword() {
       "Afterwards, connect to the WiFi (with the new name or password, if changed) and open <a href='/'>192.168.4.1</a>. You may have to \"forget\" the WiFi on your device first.") +
     "</p>" + pageFooter());
   restartAtMs = millis() + 1500;
+}
+
+// ---------------------------------------------------------------------------
+// Passwortschutz fuer das Webinterface (optional)
+// Anmeldung per Formular; danach merkt sich der Browser ein zufaelliges Sitzungs-Cookie.
+// Gespeichert wird nur ein gesalzener SHA-256-Hash des Passworts. Der Notfall-Reset entfernt den Schutz.
+// ---------------------------------------------------------------------------
+
+struct WebSession {
+  char token[33];   // leer = Platz frei
+  uint32_t lastMs;  // letzte Nutzung
+};
+constexpr int WEB_MAX_SESSIONS = 4;
+constexpr uint32_t WEB_SESSION_IDLE_MS = 24UL * 60 * 60 * 1000;  // nach 24 h ohne Nutzung neu anmelden
+constexpr uint8_t WEB_MAX_FAILS = 5;                             // danach ...
+constexpr uint32_t WEB_BLOCK_MS = 60000;                         // ... 1 Minute keine Anmeldung
+String webPassHash;  // Hex, leer = kein Passwortschutz
+String webPassSalt;
+WebSession webSessions[WEB_MAX_SESSIONS] = {};
+uint8_t webLoginFails = 0;
+uint32_t webLoginBlockedUntil = 0;
+
+bool webPasswordSet() { return !webPassHash.isEmpty(); }
+
+String randomHex(int words) {
+  String text;
+  char part[9];
+  for (int i = 0; i < words; ++i) {
+    snprintf(part, sizeof(part), "%08lx", static_cast<unsigned long>(esp_random()));
+    text += part;
+  }
+  return text;
+}
+
+String hashPassword(const String &salt, const String &password) {
+  const String input = salt + password;
+  uint8_t digest[32];
+  mbedtls_sha256(reinterpret_cast<const unsigned char *>(input.c_str()), input.length(), digest, 0);
+  char hex[65];
+  for (int i = 0; i < 32; ++i) snprintf(hex + i * 2, 3, "%02x", digest[i]);
+  return String(hex);
+}
+
+// Vergleich mit konstanter Laufzeit (verraet nicht, ab welchem Zeichen es abweicht)
+bool sameSecret(const String &a, const String &b) {
+  if (a.length() != b.length()) return false;
+  uint8_t diff = 0;
+  for (size_t i = 0; i < a.length(); ++i) diff |= static_cast<uint8_t>(a[i] ^ b[i]);
+  return diff == 0;
+}
+
+// Leeres Passwort = Schutz entfernen. Beendet alle Anmeldungen.
+void setWebPassword(const String &password) {
+  if (password.isEmpty()) {
+    webPassHash = "";
+    webPassSalt = "";
+    preferences.remove("web_hash");
+    preferences.remove("web_salt");
+  } else {
+    webPassSalt = randomHex(4);
+    webPassHash = hashPassword(webPassSalt, password);
+    preferences.putString("web_salt", webPassSalt);
+    preferences.putString("web_hash", webPassHash);
+  }
+  memset(webSessions, 0, sizeof(webSessions));
+}
+
+String sessionToken() {
+  const String cookie = webServer.header("Cookie");
+  const int position = cookie.indexOf("nb_session=");
+  if (position < 0) return String();
+  return cookie.substring(position + 11, position + 11 + 32);
+}
+
+bool sessionValid() {
+  const String token = sessionToken();
+  if (token.length() != 32) return false;
+  const uint32_t now = millis();
+  for (WebSession &session : webSessions) {
+    if (session.token[0] == 0) continue;
+    if (now - session.lastMs > WEB_SESSION_IDLE_MS) {
+      session.token[0] = 0;
+      continue;
+    }
+    if (sameSecret(String(session.token), token)) {
+      session.lastMs = now;
+      return true;
+    }
+  }
+  return false;
+}
+
+// Neue Sitzung fuer diesen Browser (Cookie wird mit der naechsten Antwort gesendet)
+void startSession() {
+  WebSession *slot = &webSessions[0];
+  for (WebSession &session : webSessions) {
+    if (session.token[0] == 0) {
+      slot = &session;
+      break;
+    }
+    if (static_cast<int32_t>(session.lastMs - slot->lastMs) < 0) slot = &session;
+  }
+  const String token = randomHex(4);
+  memcpy(slot->token, token.c_str(), 32);
+  slot->token[32] = 0;
+  slot->lastMs = millis();
+  webServer.sendHeader("Set-Cookie", String("nb_session=") + token + "; Path=/; HttpOnly; SameSite=Strict");
+}
+
+void showLogin(const String &message, int code) {
+  detectLanguage();
+  webServer.send(code, "text/html; charset=utf-8", pageHeader(T("Anmelden", "Log in")) + languageSwitchHtml() +
+    "<h1>" + PRODUCT_NAME + " <small class='sub'>" + T("Anmeldung", "Login") + "</small></h1>" +
+    (message.isEmpty() ? String("") : String("<p class='bad'>") + message + "</p>") +
+    "<form method='post' action='/login'><label>" + T("Passwort des Webinterface", "Web interface password") +
+    "<input name='pw' type='password' autocomplete='current-password' autofocus required></label><button type='submit'>" + T("Anmelden", "Log in") + "</button></form>"
+    "<p><small>" + T("Passwort vergessen? Stromversorgung 3-mal hintereinander kurz aus- und wieder einschalten (jeweils innerhalb von 10 Sekunden). Danach ist der Passwortschutz entfernt und die Bridge startet im NAT-Modus mit dem Einrichtungs-WLAN.",
+      "Forgot the password? Switch the power off and on again 3 times in a row (each within 10 seconds). Password protection is then removed and the bridge starts in NAT mode with the setup WiFi.") +
+    "</small></p>" + pageFooter());
+}
+
+// true = Anfrage darf bearbeitet werden. Sonst wurde schon die Anmeldeseite (bzw. 401 fuer Abfragen) gesendet.
+bool requireAuth() {
+  if (!webPasswordSet() || sessionValid()) return true;
+  const String uri = webServer.uri();
+  if (uri == "/status" || uri == "/networks") {
+    webServer.send(401, "application/json", "{\"login\":true}");  // die Seite laedt sich dann neu
+    return false;
+  }
+  showLogin("", 401);
+  return false;
+}
+
+template <void (*Handler)()>
+void guarded() {
+  if (requireAuth()) Handler();
+}
+
+void showHomeGuarded() {
+  if (captiveRedirect()) return;  // Captive Portal zuerst: die Weiterleitung verraet nichts
+  if (requireAuth()) showHome();
+}
+
+void redirectHome() {
+  webServer.sendHeader("Location", "/");
+  webServer.send(303, "text/plain", "");
+}
+
+void doLogin() {
+  detectLanguage();
+  if (!webPasswordSet()) {
+    redirectHome();
+    return;
+  }
+  if (webLoginBlockedUntil != 0) {
+    if (static_cast<int32_t>(millis() - webLoginBlockedUntil) < 0) {
+      showLogin(T("Zu viele Fehlversuche. Bitte warte eine Minute.", "Too many failed attempts. Please wait a minute."), 429);
+      return;
+    }
+    webLoginBlockedUntil = 0;
+  }
+  if (sameSecret(hashPassword(webPassSalt, webServer.arg("pw")), webPassHash)) {
+    webLoginFails = 0;
+    startSession();
+    Serial.println("Webinterface: Anmeldung erfolgreich");
+    redirectHome();
+    return;
+  }
+  Serial.println("Webinterface: falsches Passwort");
+  if (++webLoginFails >= WEB_MAX_FAILS) {
+    webLoginFails = 0;
+    webLoginBlockedUntil = stampMs() + WEB_BLOCK_MS;
+    if (webLoginBlockedUntil == 0) webLoginBlockedUntil = 1;
+    Serial.println("Webinterface: zu viele Fehlversuche, Anmeldung 1 Minute gesperrt");
+  }
+  showLogin(T("Falsches Passwort.", "Wrong password."), 401);
+}
+
+void doLogout() {
+  const String token = sessionToken();
+  for (WebSession &session : webSessions) {
+    if (session.token[0] != 0 && token.length() == 32 && sameSecret(String(session.token), token)) session.token[0] = 0;
+  }
+  webServer.sendHeader("Set-Cookie", "nb_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
+  redirectHome();
+}
+
+void sendWebPasswordPage(int code, const char *titleDe, const char *titleEn, const String &body) {
+  webServer.send(code, "text/html; charset=utf-8", pageHeader(T(titleDe, titleEn)) + "<h1>" + T(titleDe, titleEn) + "</h1>" + body +
+    "<p><a href='/'>" + T("Zur&uuml;ck zur Startseite", "Back to the start page") + "</a></p>" + pageFooter());
+}
+
+void saveWebPassword() {
+  detectLanguage();
+  if (webServer.arg("web_off") == "1") {
+    setWebPassword("");
+    Serial.println("Webinterface: Passwortschutz entfernt");
+    sendWebPasswordPage(200, "Passwortschutz entfernt", "Password protection removed", String("<p class='bad'>") +
+      T("Das Webinterface ist jetzt wieder ohne Passwort erreichbar.", "The web interface can now be opened without a password again.") + "</p>");
+    return;
+  }
+  const String password = webServer.arg("web_new");
+  if (password != webServer.arg("web_repeat")) {
+    sendWebPasswordPage(400, "Passwort nicht ge&auml;ndert", "Password not changed", String("<p class='bad'>") +
+      T("Die beiden Passwort-Eingaben stimmen nicht &uuml;berein.", "The two password entries do not match.") + "</p>");
+    return;
+  }
+  if (!isValidWifiPassword(password)) {
+    sendWebPasswordPage(400, "Passwort nicht ge&auml;ndert", "Password not changed", String("<p class='bad'>") +
+      T("Das Passwort muss 8 bis 63 Zeichen lang sein (keine Umlaute).", "The password must be 8 to 63 characters long (ASCII only).") + "</p>");
+    return;
+  }
+  setWebPassword(password);
+  startSession();  // dieser Browser bleibt angemeldet, alle anderen muessen sich neu anmelden
+  Serial.println("Webinterface: Passwort gespeichert");
+  sendWebPasswordPage(200, "Passwort gespeichert", "Password saved", String("<p class='ok'>") +
+    T("Das Webinterface ist jetzt durch ein Passwort gesch&uuml;tzt. Dieser Browser bleibt angemeldet; andere Ger&auml;te m&uuml;ssen sich anmelden.",
+      "The web interface is now protected by a password. This browser stays logged in; other devices have to log in.") + "</p>");
+}
+
+String webPasswordSectionHtml() {
+  const bool set = webPasswordSet();
+  String html = String("<h2 id='webpw'>") + T("Passwort f&uuml;r dieses Webinterface", "Password for this web interface") + "</h2>";
+  if (set) {
+    html += String("<p class='ok'>") + T("Passwortschutz ist aktiv.", "Password protection is enabled.") + "</p>";
+  } else {
+    html += String("<p class='wait'>") + T("Kein Passwort gesetzt: Jeder, der diese Seite erreicht, kann die Einstellungen &auml;ndern.", "No password set: anyone who can reach this page can change the settings.") +
+      (isApMode() ? T(" Im Access-Point-Modus ist sie auch aus deinem Heimnetz erreichbar.", " In access point mode it can also be reached from your home network.") : "") + "</p>";
+  }
+  html += String("<form method='post' action='/webpass' onsubmit=\"if(!(this.web_off&&this.web_off.checked)){if(this.web_new.value.length<8){alert(L.webPwShort);return false;}if(this.web_new.value!=this.web_repeat.value){alert(L.mismatch);return false;}}return true;\">");
+  if (set) {
+    html += String("<label class='chk'><input type='checkbox' name='web_off' value='1'><span><b>") + T("Passwortschutz entfernen", "Remove password protection") + "</b></span></label>";
+  }
+  html += String("<div class='pwfields'><label>") + T("Neues Passwort", "New password") + "<input name='web_new' type='password' maxlength='63' autocomplete='new-password'></label>"
+    "<label>" + T("Neues Passwort wiederholen", "Repeat new password") + "<input name='web_repeat' type='password' maxlength='63' autocomplete='new-password'></label>"
+    "<p><small>" + T("8 bis 63 Zeichen, keine Umlaute. Vergessen? Der Notfall-Reset (3-mal Strom aus/an) entfernt den Passwortschutz.",
+      "8 to 63 characters, ASCII only. Forgot it? The emergency reset (power off/on 3 times) removes the password protection.") + "</small></p></div>"
+    "<button type='submit'>" + (set ? T("Speichern", "Save") : T("Passwort festlegen", "Set password")) + "</button></form>";
+  if (set) {
+    html += String("<form method='post' action='/logout'><button class='secondary' type='submit'>") + T("Abmelden", "Log out") + "</button></form>";
+  }
+  return html;
 }
 
 // ---------------------------------------------------------------------------
@@ -2225,14 +2478,22 @@ void setup() {
   quickBoots = (esp_reset_reason() == ESP_RST_POWERON) ? quickBoots + 1 : 0;
   if (quickBoots >= 3) {
     preferences.putUChar("mode", MODE_NAT);
+    preferences.remove("web_hash");  // Passwortschutz des Webinterface entfernen (Passwort vergessen)
+    preferences.remove("web_salt");
     quickBoots = 0;
     recoveryTriggered = true;
-    Serial.println("Notfall-Reset: Betriebsart auf NAT zurueckgesetzt");
+    Serial.println("Notfall-Reset: Betriebsart auf NAT zurueckgesetzt, Passwortschutz des Webinterface entfernt");
   }
   preferences.putUChar("boots", quickBoots);
   bootCounterClearAtMs = millis() + 10000;
 
   fwLoad();
+  if (preferences.isKey("web_hash") && preferences.isKey("web_salt")) {
+    webPassHash = preferences.getString("web_hash", "");
+    webPassSalt = preferences.getString("web_salt", "");
+    if (webPassHash.length() != 64) webPassHash = "";
+  }
+  Serial.println(webPasswordSet() ? "Webinterface: Passwortschutz aktiv" : "Webinterface: ohne Passwort");
   routerSsid = preferences.getString("ssid", "");
   routerPassword = preferences.getString("password", "");
   apSsid = preferences.getString("ap_ssid", SETUP_AP_SSID);
@@ -2291,17 +2552,21 @@ void setup() {
     Serial.println("Hinweis: WLAN der Bridge nutzt noch das Standard-Passwort");
   }
 
-  webServer.on("/", HTTP_GET, showHome);
-  webServer.on("/status", HTTP_GET, showStatus);
-  webServer.on("/networks", HTTP_GET, showNetworks);
-  webServer.on("/save", HTTP_POST, saveSettings);
-  webServer.on("/mode", HTTP_POST, saveMode);
-  webServer.on("/appass", HTTP_POST, saveApPassword);
+  // Alle Seiten ausser Anmeldung und Sprachwahl sind bei gesetztem Passwort geschuetzt
+  webServer.on("/", HTTP_GET, showHomeGuarded);
+  webServer.on("/status", HTTP_GET, guarded<showStatus>);
+  webServer.on("/networks", HTTP_GET, guarded<showNetworks>);
+  webServer.on("/save", HTTP_POST, guarded<saveSettings>);
+  webServer.on("/mode", HTTP_POST, guarded<saveMode>);
+  webServer.on("/appass", HTTP_POST, guarded<saveApPassword>);
+  webServer.on("/firewall", HTTP_POST, guarded<saveFirewall>);
+  webServer.on("/webpass", HTTP_POST, guarded<saveWebPassword>);
+  webServer.on("/login", HTTP_POST, doLogin);
+  webServer.on("/logout", HTTP_POST, doLogout);
   webServer.on("/lang", HTTP_GET, setLanguage);
-  webServer.on("/firewall", HTTP_POST, saveFirewall);
   static const char *collectedHeaders[] = {"Cookie", "Accept-Language"};
   webServer.collectHeaders(collectedHeaders, 2);
-  webServer.onNotFound(showHome);
+  webServer.onNotFound(showHomeGuarded);
   webServer.begin();
 
   if (installEthernetDriver()) {

@@ -60,7 +60,11 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
   - **Access Point – WLAN direkt im Heimnetz (Bridge)**: WLAN-Geräte bekommen ihre IP direkt vom
     Router. Das Webinterface ist dann über die IP erreichbar, die der Router der Bridge gibt
     (z. B. `http://wt32-eth01-netbridge.fritz.box`).
-- **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt die Betriebsart auf NAT zurück.
+- **Passwortschutz für das Webinterface** (optional): Anmeldeseite, Sitzungs-Cookie, gespeichert wird nur
+  ein gesalzener Hash des Passworts. Empfohlen in den Access-Point-Betriebsarten, weil das Webinterface
+  dort auch aus dem Heimnetz erreichbar ist.
+- **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt die Betriebsart auf NAT zurück und entfernt
+  das Passwort des Webinterface.
 - **Einfache Firewall** für die angeschlossenen Geräte: „Nur Internet, kein Heimnetz“, Webinterface
   sperren, WLAN-Geräte trennen, bis zu 16 eigene Regeln mit Trefferzähler, MAC-Liste in den
   Access-Point-Betriebsarten.
@@ -217,7 +221,8 @@ Chromecast, Drucker).
 >
 > **Zurück zur Einrichtung (Notfall-Reset):** die Stromversorgung **3-mal hintereinander** kurz aus-
 > und wieder einschalten, jeweils innerhalb von 10 Sekunden. Danach startet die Bridge im NAT-Modus mit
-> dem Einrichtungs-WLAN; alle anderen Einstellungen bleiben erhalten.
+> dem Einrichtungs-WLAN, und das Passwort des Webinterface ist entfernt; alle anderen Einstellungen
+> bleiben erhalten.
 
 ## Firewall
 
@@ -262,7 +267,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **3.1** – zeigt Gerätenamen, Hersteller und Restlaufzeit der DHCP-Vergabe der verbundenen Geräte.
+Aktuelle Version: **3.2** – optionaler Passwortschutz für das Webinterface.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

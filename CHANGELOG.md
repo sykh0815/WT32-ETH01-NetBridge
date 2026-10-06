@@ -13,6 +13,19 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.2] – 2026-10-06
+
+### Added
+- **Optional password protection for the web interface** (section "Password for this web interface").
+  When a password is set, every page asks for it on a login page; the browser then stays logged in
+  with a random session cookie (24 hours without use, "Log out" button). Only a salted SHA-256 hash
+  of the password is stored. After 5 wrong attempts, login is blocked for one minute.
+- In the access point modes a notice at the top of the page points out a missing password, because
+  the web interface is also reachable from the home network there.
+
+### Changed
+- The **emergency reset** (power off/on 3 times) now also removes the web interface password.
+
 ## [3.1] – 2026-10-06
 
 ### Added
