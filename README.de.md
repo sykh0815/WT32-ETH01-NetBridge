@@ -1,4 +1,4 @@
-# WT32 NetBridge – WT32-ETH01 Ethernet ⇄ WLAN Bridge & Access Point (ESP32 + LAN8720)
+# WT32-ETH01 NetBridge – Ethernet ⇄ WLAN Bridge & Access Point (ESP32 + LAN8720)
 
 🇬🇧 [English](README.md) | 🇩🇪 **Deutsch**
 
@@ -10,7 +10,7 @@
 
 **Version 3.0** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
 
-**WT32 NetBridge** ist eine Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die Ethernet und
+**WT32-ETH01 NetBridge** ist eine Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die Ethernet und
 WLAN in beide Richtungen verbindet:
 
 - **WLAN-Client:** bringt ein Gerät mit LAN-Anschluss ins WLAN – ein **WLAN-Adapter für Geräte ohne
@@ -19,12 +19,12 @@ WLAN in beide Richtungen verbindet:
   Access Point, Gäste-WLAN oder WLAN-Erweiterung, auf Wunsch mit Firewall.
 
 <p align="center">
-  <img src="docs/netbridge-banner.png" alt="WT32 NetBridge – Ethernet ⇄ WLAN für den WT32-ETH01: WLAN-Client oder Access Point, NAT oder Bridge, Firewall" width="760">
+  <img src="docs/wt32-eth01-netbridge-banner.png" alt="WT32-ETH01 NetBridge – Ethernet ⇄ WLAN für den WT32-ETH01: WLAN-Client oder Access Point, NAT oder Bridge, Firewall" width="760">
 </p>
 
 ```
-WLAN-Client:   [ Gerät mit LAN ] ──Kabel── [ WT32 NetBridge ] ))) WLAN ))) [ Router ] ── Internet
-Access Point:  [ Handy, Laptop ] ))) WLAN ))) [ WT32 NetBridge ] ──Kabel── [ Router ] ── Internet
+WLAN-Client:   [ Gerät mit LAN ] ──Kabel── [ WT32-ETH01 NetBridge ] ))) WLAN ))) [ Router ] ── Internet
+Access Point:  [ Handy, Laptop ] ))) WLAN ))) [ WT32-ETH01 NetBridge ] ──Kabel── [ Router ] ── Internet
 ```
 
 ## Webinterface
@@ -248,7 +248,8 @@ docs/TUTORIAL.de.md       Tutorial: Kompilieren und Flashen (Deutsch)
 docs/TUTORIAL.en.md       Tutorial: build and flash (English)
 docs/webinterface-v2.4.png Screenshot des Webinterface (echtes Gerät)
 docs/SCREENSHOTS.de.md    Screenshot-Album (DE), docs/screenshots/en|de/
-docs/netbridge-banner.png Banner auf der Startseite
+docs/wt32-eth01-netbridge-banner.png Banner auf der Startseite
+tools/make_preview.py     erzeugt Banner und Vorschaubild neu
 docs/wt32-eth01.svg       Illustration des Boards
 docs/social-preview.png   Vorschaubild für GitHub
 CHANGELOG.de.md           Änderungsprotokoll (Deutsch)

@@ -91,5 +91,5 @@ git tag -a "$TAG" -m "Version $VERSION" 2>/dev/null || echo "Tag $TAG existiert 
 git push origin "$TAG"
 
 echo "==> Release"
-gh release create "$TAG" --title "Version $VERSION" --notes-file "$NOTES" --latest "${ASSETS[@]}"
+gh release create "$TAG" --title "WT32-ETH01 NetBridge $VERSION" --notes-file "$NOTES" --latest "${ASSETS[@]}"
 echo "==> Fertig / done: $(gh release view "$TAG" --json url -q .url)"

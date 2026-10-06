@@ -2,7 +2,7 @@
 
 🇬🇧 [English](SCREENSHOTS.md) | 🇩🇪 **Deutsch**
 
-Webinterface der Firmware 3.0 (WT32 NetBridge). Die Seiten wurden von der Firmware selbst erzeugt; die Live-Werte (Signal, Geräte, Zähler) sind Beispieldaten.
+Webinterface der Firmware 3.0 (WT32-ETH01 NetBridge). Die Seiten wurden von der Firmware selbst erzeugt; die Live-Werte (Signal, Geräte, Zähler) sind Beispieldaten.
 
 Zurück zur [Projektbeschreibung](../README.de.md).
 

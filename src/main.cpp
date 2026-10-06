@@ -79,7 +79,7 @@ void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, v
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
 constexpr char FIRMWARE_VERSION[] = "3.1";
-constexpr char PRODUCT_NAME[] = "WT32 NetBridge";
+constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-netbridge";  // Name im Router (z. B. http://wt32-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-NetBridge-Setup";
 // Standard-Passwort des Einrichtungs-WLANs. Leer = offenes WLAN beim ersten Start; das Webinterface
@@ -2242,7 +2242,7 @@ void setup() {
   apOpenChosen = setupApPassword.isEmpty() && preferences.getBool("ap_openok", false);
   if (isApMode() && setupApPassword.isEmpty() && !apOpenChosen) bridgeMode = MODE_NAT;  // kein ungewollt offener Access Point
   const char *modeNames[] = {"NAT", "Bridge", "Access Point (NAT)", "Access Point (Bridge)"};
-  Serial.printf("%s (WT32-ETH01), Firmware %s\n", PRODUCT_NAME, FIRMWARE_VERSION);
+  Serial.printf("%s, Firmware %s\n", PRODUCT_NAME, FIRMWARE_VERSION);
   Serial.printf("Betriebsart: %s\n", modeNames[bridgeMode]);
 
   const char *apPassword = setupApPassword.isEmpty() ? nullptr : setupApPassword.c_str();

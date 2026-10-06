@@ -1,4 +1,4 @@
-# WT32 NetBridge – WT32-ETH01 Ethernet ⇄ WiFi Bridge & Access Point (ESP32 + LAN8720)
+# WT32-ETH01 NetBridge – Ethernet ⇄ WiFi Bridge & Access Point (ESP32 + LAN8720)
 
 🇬🇧 **English** | 🇩🇪 [Deutsch](README.de.md)
 
@@ -10,7 +10,7 @@
 
 **Version 3.0** – see the [changelog](CHANGELOG.md)
 
-**WT32 NetBridge** is a firmware for the **WT32-ETH01 v1.4** (ESP32 + LAN8720) that connects
+**WT32-ETH01 NetBridge** is a firmware for the **WT32-ETH01 v1.4** (ESP32 + LAN8720) that connects
 Ethernet and WiFi in both directions:
 
 - **WiFi client:** brings a device with an Ethernet port into your WiFi – a **WiFi adapter for
@@ -20,12 +20,12 @@ Ethernet and WiFi in both directions:
   access point, guest WiFi or WiFi extension, optionally with a firewall.
 
 <p align="center">
-  <img src="docs/netbridge-banner.png" alt="WT32 NetBridge – Ethernet ⇄ WiFi for WT32-ETH01: WiFi client or access point, NAT or bridge, firewall" width="760">
+  <img src="docs/wt32-eth01-netbridge-banner.png" alt="WT32-ETH01 NetBridge – Ethernet ⇄ WiFi for WT32-ETH01: WiFi client or access point, NAT or bridge, firewall" width="760">
 </p>
 
 ```
-WiFi client:   [ LAN device ] ──cable── [ WT32 NetBridge ] ))) WiFi ))) [ Router ] ── Internet
-Access point:  [ phone, laptop ] ))) WiFi ))) [ WT32 NetBridge ] ──cable── [ Router ] ── Internet
+WiFi client:   [ LAN device ] ──cable── [ WT32-ETH01 NetBridge ] ))) WiFi ))) [ Router ] ── Internet
+Access point:  [ phone, laptop ] ))) WiFi ))) [ WT32-ETH01 NetBridge ] ──cable── [ Router ] ── Internet
 ```
 
 ## Web interface
@@ -248,7 +248,8 @@ docs/TUTORIAL.en.md       tutorial: build and flash (English)
 docs/TUTORIAL.de.md       Tutorial: Kompilieren und Flashen (Deutsch)
 docs/webinterface-v2.4.png screenshot of the web interface (real device)
 docs/SCREENSHOTS.md       screenshot album (EN), docs/screenshots/en|de/
-docs/netbridge-banner.png banner on the start page
+docs/wt32-eth01-netbridge-banner.png banner on the start page
+tools/make_preview.py     regenerates banner and social preview
 docs/wt32-eth01.svg       board illustration
 docs/social-preview.png   GitHub preview image
 tools/release.sh          builds the firmware and creates a GitHub release
@@ -276,7 +277,7 @@ If this project helps you, I'd be happy about a coffee:
 The serial output (115200 baud) shows the current state, for example:
 
 ```
-WT32 NetBridge (WT32-ETH01), Firmware 3.1
+WT32-ETH01 NetBridge, Firmware 3.1
 Betriebsart: NAT
 DHCP server started on interface ETH_LAN with IP: 192.168.50.1
 Ethernet-LAN: 192.168.50.1, DHCP-Server laeuft

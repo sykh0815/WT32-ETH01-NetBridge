@@ -117,7 +117,7 @@ In der blauen Statusleiste unten gibt es drei wichtige Symbole:
 4. Auf **🔌 Serial Monitor** klicken. Es erscheint unter anderem:
 
    ```
-   WT32 NetBridge (WT32-ETH01), Firmware 3.0
+   WT32-ETH01 NetBridge, Firmware 3.0
    Einrichtungsseite: http://192.168.4.1
    ```
 

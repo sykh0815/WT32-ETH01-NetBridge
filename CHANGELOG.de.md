@@ -30,6 +30,12 @@ der seriellen Ausgabe angezeigt.
 - Die Auswahl für die MAC-Liste der Firewall zeigt die Gerätenamen.
 - `tools/gen_oui.py` erzeugt die Herstellertabelle neu aus der offiziellen IEEE-Liste.
 
+### Geändert
+- **Projektname ist jetzt WT32-ETH01 NetBridge** (statt „WT32 NetBridge“), damit man das Projekt bei
+  der Suche nach dem Board leichter findet. Titel im Webinterface, serielle Ausgabe, Dokumentation,
+  Banner und Vorschaubild verwenden den neuen Namen. Einrichtungs-WLAN (`WT32-NetBridge-Setup`) und
+  Hostname (`wt32-netbridge`) bleiben unverändert.
+
 ## [3.0] – 06.10.2026
 
 ### Geändert
