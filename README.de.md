@@ -60,6 +60,8 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
   - **Access Point – WLAN direkt im Heimnetz (Bridge)**: WLAN-Geräte bekommen ihre IP direkt vom
     Router. Das Webinterface ist dann über die IP erreichbar, die der Router der Bridge gibt
     (z. B. `http://wt32-eth01-netbridge.fritz.box`).
+- **Live-Datenrate am LAN-Port**: aktueller Download/Upload, Verlauf der letzten 2 Minuten,
+  Höchstwerte und Datenmenge seit dem Start.
 - **Passwortschutz für das Webinterface** (optional): Anmeldeseite, Sitzungs-Cookie, gespeichert wird nur
   ein gesalzener Hash des Passworts. Empfohlen in den Access-Point-Betriebsarten, weil das Webinterface
   dort auch aus dem Heimnetz erreichbar ist.
@@ -267,7 +269,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **3.2** – optionaler Passwortschutz für das Webinterface.
+Aktuelle Version: **3.3** – Live-Datenrate am LAN-Port.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

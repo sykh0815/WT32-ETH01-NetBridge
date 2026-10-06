@@ -14,6 +14,15 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.3] – 06.10.2026
+
+### Neu
+- **Live-Datenrate am LAN-Port** in der LAN-Karte: aktueller Download und Upload, kleiner Verlauf der
+  letzten 2 Minuten, Höchstwerte und Datenmenge seit dem Start. Funktioniert in allen vier
+  Betriebsarten (Download = zum LAN-Gerät in den Client-Betriebsarten, vom Router in den
+  Access-Point-Betriebsarten). Die Firmware zählt dafür nur die Bytes pro Frame; die Rate wird einmal
+  pro Sekunde berechnet.
+
 ## [3.2] – 06.10.2026
 
 ### Neu

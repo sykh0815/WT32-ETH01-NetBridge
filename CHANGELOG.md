@@ -13,6 +13,14 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.3] – 2026-10-06
+
+### Added
+- **Live data rate on the LAN port** in the LAN card: current download and upload, a small chart of
+  the last 2 minutes, peak values and data volume since start. Works in all four operating modes
+  (download = towards the LAN device in the client modes, from the router in the access point modes).
+  The firmware only adds a byte counter per frame; the rate is calculated once per second.
+
 ## [3.2] – 2026-10-06
 
 ### Added

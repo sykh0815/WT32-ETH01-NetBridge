@@ -78,11 +78,13 @@ String firewallStatusJson();
 void fwLoad();
 void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData);
 bool webPasswordSet();
+void useCountingTransmit();
+esp_err_t onApNatUplinkInput(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv);
 String webPasswordSectionHtml();
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.2";
+constexpr char FIRMWARE_VERSION[] = "3.3";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -170,6 +172,19 @@ uint8_t lanDeviceMac[6] = {};
 volatile bool lanDeviceKnown = false;
 volatile bool bridgeWifiLinked = false;
 volatile uint32_t framesToWifi = 0;
+
+// Datenrate am LAN-Port: Bytezaehler in den Empfangs-/Sendewegen (ein atomares Addieren pro Frame),
+// die Rate wird einmal pro Sekunde in loop() berechnet
+uint32_t lanRxBytes = 0;  // vom Kabel empfangen
+uint32_t lanTxBytes = 0;  // ins Kabel gesendet
+uint64_t lanRxTotal = 0;
+uint64_t lanTxTotal = 0;
+uint32_t lanRxRate = 0;   // Bit pro Sekunde
+uint32_t lanTxRate = 0;
+uint32_t lanRxPeak = 0;
+uint32_t lanTxPeak = 0;
+inline void countLanRx(uint32_t len) { __atomic_fetch_add(&lanRxBytes, len, __ATOMIC_RELAXED); }
+inline void countLanTx(uint32_t len) { __atomic_fetch_add(&lanTxBytes, len, __ATOMIC_RELAXED); }
 volatile uint32_t framesToLan = 0;
 volatile uint32_t framesDropped = 0;
 
@@ -875,6 +890,7 @@ String fwPortText(const FwRule &rule) {
 
 // Ethernet -> WLAN (laeuft im Empfangs-Task des Ethernet-Treibers)
 esp_err_t onLanFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv) {
+  countLanRx(len);
   sniffDhcp(buffer, len);  // vor dem Umschreiben: chaddr ist noch die MAC des LAN-Geraets
   if (bridgeWifiLinked && len <= 1600 && fwCheckFrame(buffer, len, true) && rewriteFrame(true, buffer, static_cast<uint16_t>(len))) {
     if (esp_wifi_internal_tx(WIFI_IF_STA, buffer, static_cast<uint16_t>(len)) == ESP_OK) framesToWifi = framesToWifi + 1;
@@ -891,8 +907,12 @@ esp_err_t onWifiFrame(void *buffer, uint16_t len, void *eb) {
   fwLearnDhcp(static_cast<uint8_t *>(buffer), len);
   if (ethernetLinkUp && fwCheckFrame(static_cast<uint8_t *>(buffer), len, false) && rewriteFrame(false, static_cast<uint8_t *>(buffer), len)) {
     sniffDhcp(static_cast<uint8_t *>(buffer), len);  // nach dem Umschreiben: chaddr ist die MAC des LAN-Geraets
-    if (esp_eth_transmit(ethernetHandle, buffer, len) == ESP_OK) framesToLan = framesToLan + 1;
-    else framesDropped = framesDropped + 1;
+    if (esp_eth_transmit(ethernetHandle, buffer, len) == ESP_OK) {
+      framesToLan = framesToLan + 1;
+      countLanTx(len);
+    } else {
+      framesDropped = framesDropped + 1;
+    }
   }
   esp_wifi_internal_free_rx_buffer(eb);
   return ESP_OK;
@@ -941,7 +961,7 @@ String languageSwitchHtml() {
 // ---------------------------------------------------------------------------
 
 String pageHeader(const String &title) {
-  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:auto 1fr 1fr 2fr 1fr 3em;gap:6px;align-items:center;margin-top:6px}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input[type=checkbox]{width:auto}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}@media(max-width:600px){.fwrule{grid-template-columns:auto 1fr 1fr}.fwrule input[name$=_dst]{grid-column:span 2}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}form:has(input[name=web_off]:checked) .pwfields{display:none}.card>.dangerbox{margin:0 0 16px}.dangerbox a{color:#7a1414;font-weight:bold}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}.cl{padding:9px 0;border-top:1px solid #d6e2ee}.cl:first-child{border-top:0}.cl div{display:flex;justify-content:space-between;gap:10px}.cl div span{color:#4b5865}.cl small{display:block;margin-top:3px}.mini{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px}.mini .bar{width:4px;border-radius:1px}</style></head><body><div class='card'>";
+  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:auto 1fr 1fr 2fr 1fr 3em;gap:6px;align-items:center;margin-top:6px}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input[type=checkbox]{width:auto}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}@media(max-width:600px){.fwrule{grid-template-columns:auto 1fr 1fr}.fwrule input[name$=_dst]{grid-column:span 2}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}.spark{display:block;width:100%;height:40px;margin:2px 0 3px;background:#f8fbfe;border-radius:6px}.spark polyline{fill:none;stroke-width:1.6;vector-effect:non-scaling-stroke}.spark .dn{stroke:#1263a6}.spark .up{stroke:#dd9a17}span.dn{color:#1263a6}span.up{color:#a56d00}form:has(input[name=web_off]:checked) .pwfields{display:none}.card>.dangerbox{margin:0 0 16px}.dangerbox a{color:#7a1414;font-weight:bold}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}.cl{padding:9px 0;border-top:1px solid #d6e2ee}.cl:first-child{border-top:0}.cl div{display:flex;justify-content:space-between;gap:10px}.cl div span{color:#4b5865}.cl small{display:block;margin-top:3px}.mini{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px}.mini .bar{width:4px;border-radius:1px}</style></head><body><div class='card'>";
 }
 
 String pageFooter() { return "</div></body></html>"; }
@@ -955,6 +975,8 @@ String lanStatusJson() {
   String json = "{\"speed\":" + String(ethernetLinkUp ? ethernetSpeedMbit : 0);
   json += ",\"fullDuplex\":" + String(ethernetFullDuplex ? "true" : "false");
   json += ",\"linkSeconds\":" + String(ethernetLinkUp ? (now - ethernetLinkSinceMs) / 1000 : 0);
+  json += ",\"rxRate\":" + String(lanRxRate) + ",\"txRate\":" + String(lanTxRate) + ",\"rxPeak\":" + String(lanRxPeak) + ",\"txPeak\":" + String(lanTxPeak);
+  json += ",\"rxTotal\":" + String(static_cast<unsigned long>(lanRxTotal / 1024)) + ",\"txTotal\":" + String(static_cast<unsigned long>(lanTxTotal / 1024));  // KiB
 
   uint8_t bridgeMac[6] = {};
   if (ethernetHandle != nullptr && esp_eth_ioctl(ethernetHandle, ETH_CMD_G_MAC_ADDR, bridgeMac) == ESP_OK) {
@@ -1124,7 +1146,7 @@ const char *const JS_TEXT_DE = "var L={notConnected:'Nicht mit dem Router verbun
   "scanFail:'Die WLAN-Suche ist fehlgeschlagen. Bitte erneut versuchen.',none:'Keine WLANs gefunden.',hidden:'(verstecktes WLAN)',secured:' (gesichert)',"
   "selected:'Ausgew\\u00e4hlt: ',mismatch:'Die beiden Eingaben stimmen nicht \\u00fcberein.',confirmPw:'Passwort \\u00e4ndern? Die Bridge startet danach neu.',noUplink:'Kein Kabel erkannt. Verbinde den LAN-Port mit deinem Router.',homeIp:'IP der Bridge im Heimnetz',gateway:'Gateway',waitingIp:'wartet auf Adresse vom Router',noClients:'Noch keine WLAN-Ger\\u00e4te verbunden.',ackNeeded:'Bitte best\\u00e4tige den Hinweis zum Webinterface.',add:'zur Liste',pwNeeded:'Bitte ein WLAN-Passwort f\\u00fcr den Access Point festlegen (mindestens 8 Zeichen).',nextTry:'n\\u00e4chster Versuch in',"
   "name:'Ger\\u00e4tename',vendor:'Hersteller',noVendor:'Hersteller unbekannt',privMac:'Private MAC',privHint:'Zuf\\u00e4llige Adresse zum Schutz der Privatsph\\u00e4re \\u2013 der Hersteller ist daran nicht erkennbar.',"
-  "connFor:'verbunden seit',leaseShort:'Adresse g\\u00fcltig noch',leaseLeft:'Adresse g\\u00fcltig noch',expired:'abgelaufen',webPwShort:'Das Passwort muss mindestens 8 Zeichen lang sein.'};";
+  "connFor:'verbunden seit',leaseShort:'Adresse g\\u00fcltig noch',leaseLeft:'Adresse g\\u00fcltig noch',expired:'abgelaufen',webPwShort:'Das Passwort muss mindestens 8 Zeichen lang sein.',rate:'Datenrate',peak:'H\\u00f6chstwert',total:'Daten seit Start',last2:'letzte 2 Minuten (blau: Download, orange: Upload)',dec:','};";
 const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router',noCable:'No cable detected. Plug the cable firmly into the device and the bridge.',"
   "link:'Link',full:'full duplex',half:'half duplex',since:'Cable connected for',device:'Device',notDetected:'not detected yet (not sending anything)',"
   "noLease:'none assigned via DHCP yet',ip:'IP address',unknown:'not known yet',mac:'MAC address',seen:'Detected',assigned:'Address assigned',ago:' ago',"
@@ -1133,7 +1155,7 @@ const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router
   "scanFail:'The WiFi scan failed. Please try again.',none:'No WiFi networks found.',hidden:'(hidden network)',secured:' (secured)',"
   "selected:'Selected: ',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.',noUplink:'No cable detected. Connect the LAN port to your router.',homeIp:'Bridge IP in the home network',gateway:'Gateway',waitingIp:'waiting for an address from the router',noClients:'No WiFi devices connected yet.',ackNeeded:'Please confirm the note about the web interface.',add:'add to list',pwNeeded:'Please set a WiFi password for the access point (at least 8 characters).',nextTry:'next attempt in',"
   "name:'Device name',vendor:'Manufacturer',noVendor:'unknown manufacturer',privMac:'Private MAC',privHint:'Randomized address for privacy \\u2013 the manufacturer cannot be derived from it.',"
-  "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired',webPwShort:'The password must be at least 8 characters long.'};";
+  "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired',webPwShort:'The password must be at least 8 characters long.',rate:'Data rate',peak:'Peak',total:'Data since start',last2:'last 2 minutes (blue: download, orange: upload)',dec:'.'};";
 
 // Alle 10 s eine Diagnosezeile im seriellen Log (hilft bei Verbindungsproblemen)
 void logDiagnostics() {
@@ -1218,10 +1240,15 @@ void showHome() {
   const String script = String("<script>") + (uiEnglish ? JS_TEXT_EN : JS_TEXT_DE) +
     "function status(){fetch('/status').then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);showClients(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+(w.name?w.name+' \\u2013 ':'')+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{let t=w.name||w.ip||w.mac,d=[t!=w.mac?w.mac:'',maker(w)].filter(x=>x).join(' \\u00b7 '),x=bars(w.rssi)+' '+w.rssi+' dBm'+(w.phy?' \\u00b7 '+w.phy:'')+(w.since!=null?' \\u00b7 '+L.connFor+' '+short(w.since):'')+(w.leaseLeft!=null?' \\u00b7 '+L.leaseShort+' '+(w.leaseLeft?short(w.leaseLeft):L.expired):'');h+='<div class=\\'cl\\'><div><b>'+esc(t)+'</b>'+(w.name&&w.ip?'<span>'+w.ip+'</span>':'')+'</div><small>'+d+'</small><small>'+x+'</small></div>';});c.innerHTML=h;}function esc(t){return String(t).replace(/[&<>\"']/g,c=>'&#'+c.charCodeAt(0)+';');}function short(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60);return h?h+' h '+m+' min':m?m+' min':t+' s';}function maker(w){return w.vendor?esc(w.vendor):w.private?'<span title=\\''+L.privHint+'\\'>'+L.privMac+'</span>':L.noVendor;}function bars(r){let p=Math.max(0,Math.min(100,(r+90)*100/60)),n=Math.ceil(p/25),q=p<35?'weak':p<65?'fair':'good',h='<span class=\\'mini\\'>';for(let i=0;i<4;i++)h+='<i class=\\'bar'+(i<n?' on '+q:'')+'\\' style=\\'height:'+(i+1)*25+'%\\'></i>';return h+'</span>';}"
     "function dur(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return (h?h+' h ':'')+(h||m?m+' min ':'')+x+' s';}"
+    "var RH=[];function num(x,d){return x.toFixed(d).replace('.',L.dec);}"
+    "function rate(b){return b>=1e6?num(b/1e6,1)+' Mbit/s':b>=1e3?num(b/1e3,0)+' kbit/s':b+' bit/s';}"
+    "function size(k){return k<1024?k+' KB':k<1048576?num(k/1024,1)+' MB':num(k/1048576,2)+' GB';}"
+    "function spark(){let m=1,n=RH.length;RH.forEach(r=>{m=Math.max(m,r[0],r[1]);});let p=j=>RH.map((r,i)=>((60-n+i)*300/59).toFixed(1)+','+(38-r[j]/m*36).toFixed(1)).join(' ');"
+    "return '<svg class=\\'spark\\' viewBox=\\'0 0 300 40\\' preserveAspectRatio=\\'none\\' aria-hidden=\\'true\\'><polyline class=\\'dn\\' points=\\''+p(0)+'\\'/><polyline class=\\'up\\' points=\\''+p(1)+'\\'/></svg>';}"
     "function row(k,v){return '<tr><td>'+k+'</td><td><b>'+v+'</b></td></tr>';}"
     "function showLan(s){let l=s.lan,br=s.mode=='bridge',ap=!!s.uplink,box=document.getElementById('lanInfo'),h='';"
     "if(!s.ethLink){box.innerHTML='<p class=\\'wait\\'>'+(ap?L.noUplink:L.noCable)+'</p>';return;}"
-    "h+=row(L.link,l.speed+' Mbit/s, '+(l.fullDuplex?L.full:L.half));h+=row(L.since,dur(l.linkSeconds));if(ap){h+=row(L.homeIp,s.uplink.ip||L.waitingIp);if(s.uplink.gw)h+=row(L.gateway,s.uplink.gw);box.innerHTML='<table class=\\'info\\'>'+h+'</table>';return;}"
+    "h+=row(L.link,l.speed+' Mbit/s, '+(l.fullDuplex?L.full:L.half));h+=row(L.since,dur(l.linkSeconds));let dn=ap?l.rxRate:l.txRate,up=ap?l.txRate:l.rxRate;RH.push([dn,up]);if(RH.length>60)RH.shift();h+=row(L.rate,'<span class=dn>\\u2193 '+rate(dn)+'</span> \\u00b7 <span class=up>\\u2191 '+rate(up)+'</span>');h+='<tr><td colspan=2>'+spark()+'<small>'+L.last2+'</small></td></tr>';h+=row(L.peak,'\\u2193 '+rate(ap?l.rxPeak:l.txPeak)+' \\u00b7 \\u2191 '+rate(ap?l.txPeak:l.rxPeak));h+=row(L.total,'\\u2193 '+size(ap?l.rxTotal:l.txTotal)+' \\u00b7 \\u2191 '+size(ap?l.txTotal:l.rxTotal));if(ap){h+=row(L.homeIp,s.uplink.ip||L.waitingIp);if(s.uplink.gw)h+=row(L.gateway,s.uplink.gw);box.innerHTML='<table class=\\'info\\'>'+h+'</table>';return;}"
     "if(!l.clients.length){h+=row(br?L.device:L.ip,br?L.notDetected:L.noLease);}"
     "l.clients.forEach((c,i)=>{let p=l.clients.length>1?' ('+(i+1)+')':'';if(c.name)h+=row(L.name+p,esc(c.name));h+=row(L.ip+p,c.ip||L.unknown);h+=row(L.mac+p,c.mac);h+=row(L.vendor+p,maker(c));h+=row((br?L.seen:L.assigned)+p,dur(c.seconds)+L.ago);if(c.leaseLeft!=null)h+=row(L.leaseLeft+p,c.leaseLeft?short(c.leaseLeft):L.expired);});"
     "if(br){h+=row(L.addr,L.byRouter);if(l.staMac)h+=row(L.appears,l.staMac);h+=row(L.toWifi,l.toWifi);h+=row(L.toLan,l.toLan);h+=row(L.dropped,l.dropped);}"
@@ -1879,6 +1906,8 @@ void startApNatUplink() {
     return;
   }
   esp_netif_set_hostname(ethernetNetif, BRIDGE_HOSTNAME);
+  esp_eth_update_input_path(ethernetHandle, onApNatUplinkInput, nullptr);  // Empfang mit Bytezaehler
+  useCountingTransmit();
   esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &onUplinkIpEvent, nullptr);
   if (esp_eth_start(ethernetHandle) != ESP_OK) {
     Serial.println("AP-NAT: Ethernet konnte nicht eingeschaltet werden");
@@ -1913,6 +1942,7 @@ void updateApDns() {
 
 // NAT-Modus: Frames vom LAN-Geraet pruefen, bevor sie in den TCP/IP-Stack gehen
 esp_err_t onNatLanInput(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv) {
+  countLanRx(len);
   if (!fwCheckFrame(buffer, len, true)) {
     free(buffer);
     return ESP_OK;
@@ -1977,8 +2007,12 @@ esp_err_t onApWifiFrame(void *buffer, uint16_t len, void *eb) {
     const bool group = frame[0] & 0x01;
     if (forBridge || group) deliverCopyToBridge(frame, len);  // Webinterface, ARP, DHCP
     if (!forBridge && ethernetLinkUp) {
-      if (esp_eth_transmit(ethernetHandle, buffer, len) == ESP_OK) framesToLan = framesToLan + 1;
-      else framesDropped = framesDropped + 1;
+      if (esp_eth_transmit(ethernetHandle, buffer, len) == ESP_OK) {
+        framesToLan = framesToLan + 1;
+        countLanTx(len);
+      } else {
+        framesDropped = framesDropped + 1;
+      }
     }
   }
   esp_wifi_internal_free_rx_buffer(eb);
@@ -1986,19 +2020,44 @@ esp_err_t onApWifiFrame(void *buffer, uint16_t len, void *eb) {
 }
 
 // Sendeweg des eigenen TCP/IP-Stacks im AP-Bridge-Modus: an WLAN-Geraete ueber den AP, sonst ueber Ethernet
+void apBridgeNetifFree(void *handle, void *buffer) { free(buffer); }
+
 esp_err_t apBridgeNetifTransmit(void *handle, void *buffer, size_t len) {
   const uint8_t *frame = static_cast<const uint8_t *>(buffer);
   const bool group = frame[0] & 0x01;
   const bool toStation = !group && fwIsApStation(frame);
   if (group || toStation) esp_wifi_internal_tx(WIFI_IF_AP, buffer, static_cast<uint16_t>(len));
   if (toStation) return ESP_OK;
-  return esp_eth_transmit(ethernetHandle, buffer, len);
+  const esp_err_t result = esp_eth_transmit(ethernetHandle, buffer, len);
+  if (result == ESP_OK) countLanTx(len);
+  return result;
 }
 
-void apBridgeNetifFree(void *handle, void *buffer) { free(buffer); }
+// NAT und AP-NAT: Sendeweg des TCP/IP-Stacks ueber Ethernet, mit Bytezaehler (ersetzt den Weg von esp_netif_attach)
+esp_err_t countingNetifTransmit(void *handle, void *buffer, size_t len) {
+  const esp_err_t result = esp_eth_transmit(ethernetHandle, buffer, len);
+  if (result == ESP_OK) countLanTx(len);
+  return result;
+}
+
+// AP-NAT: Empfang vom Uplink zaehlen und an den TCP/IP-Stack geben
+esp_err_t onApNatUplinkInput(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv) {
+  countLanRx(len);
+  return esp_netif_receive(ethernetNetif, buffer, len, nullptr);
+}
+
+void useCountingTransmit() {
+  esp_netif_driver_ifconfig_t driver{};
+  driver.handle = ethernetHandle;
+  driver.transmit = countingNetifTransmit;
+  driver.driver_free_rx_buffer = apBridgeNetifFree;
+  esp_netif_set_driver_config(ethernetNetif, &driver);
+}
+
 
 // AP-Bridge: Ethernet -> Warteschlange (laeuft im Empfangs-Task des Ethernet-Treibers)
 esp_err_t onUplinkFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv) {
+  countLanRx(len);
   ForwardFrame frame{buffer, static_cast<uint16_t>(len)};
   if (len < BR_ETH_HEADER_LEN || len > 1600) {
     free(buffer);
@@ -2407,6 +2466,7 @@ void startNatLan() {
   }
   // Empfang ueber die Firewall leiten (ersetzt den Eingang, den esp_netif_attach gesetzt hat)
   esp_eth_update_input_path(ethernetHandle, onNatLanInput, nullptr);
+  useCountingTransmit();
 
   // DNS fuer die LAN-Clients: erst das Angebot aktivieren, dann die Adresse setzen.
   esp_netif_dns_info_t dns{};
@@ -2589,6 +2649,31 @@ void setup() {
   if (bridgeMode != MODE_AP_BRIDGE) Serial.println("Webinterface: http://192.168.4.1");
 }
 
+// Einmal pro Sekunde: Bytezaehler -> Datenrate (Bit/s), Summen und Hoechstwerte
+void updateLanRates() {
+  static uint32_t lastMs = 0;
+  static uint32_t lastRx = 0;
+  static uint32_t lastTx = 0;
+  const uint32_t now = millis();
+  const uint32_t elapsed = now - lastMs;
+  if (elapsed < 1000) return;
+  const uint32_t rx = __atomic_load_n(&lanRxBytes, __ATOMIC_RELAXED);
+  const uint32_t tx = __atomic_load_n(&lanTxBytes, __ATOMIC_RELAXED);
+  const uint32_t rxDelta = rx - lastRx;  // Ueberlauf nach 4 GB rechnet sich so von selbst heraus
+  const uint32_t txDelta = tx - lastTx;
+  if (lastMs != 0) {
+    lanRxTotal += rxDelta;
+    lanTxTotal += txDelta;
+    lanRxRate = static_cast<uint32_t>(static_cast<uint64_t>(rxDelta) * 8000 / elapsed);
+    lanTxRate = static_cast<uint32_t>(static_cast<uint64_t>(txDelta) * 8000 / elapsed);
+    if (lanRxRate > lanRxPeak) lanRxPeak = lanRxRate;
+    if (lanTxRate > lanTxPeak) lanTxPeak = lanTxRate;
+  }
+  lastMs = now;
+  lastRx = rx;
+  lastTx = tx;
+}
+
 void loop() {
   if (ethernetServicesPending) startLanServices();
   if (apDnsUpdatePending) updateApDns();
@@ -2602,6 +2687,7 @@ void loop() {
   if (captivePortal) dnsServer.processNextRequest();
   webServer.handleClient();
   logDiagnostics();
+  updateLanRates();
   // Falls die Seite geschlossen wurde, bevor das Scan-Ergebnis abgeholt war
   if (scanPausedConnect && millis() - scanStartedMs > 20000) {
     WiFi.scanDelete();
