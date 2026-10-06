@@ -13,6 +13,18 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.4] – 2026-10-06
+
+### Added
+- **Devices in the home network** (access point bridge mode): a table with IP address, device name,
+  manufacturer, MAC address and "last seen". The bridge detects the devices passively from their
+  broadcasts on the LAN port (ARP, DHCP, multicast); devices appear as soon as they send something,
+  names with their next address assignment. Up to 32 devices; the router is marked as such.
+
+### Fixed
+- Access point bridge: DHCP requests of devices in the home network no longer end up in the info
+  table of the WiFi devices (could push out names and lease times of the WiFi devices).
+
 ## [3.3] – 2026-10-06
 
 ### Added

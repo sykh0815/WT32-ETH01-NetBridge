@@ -78,13 +78,15 @@ String firewallStatusJson();
 void fwLoad();
 void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData);
 bool webPasswordSet();
+bool fwIsApStation(const uint8_t *mac);
+bool fwIsPrivateOrLocal(uint32_t ip);
 void useCountingTransmit();
 esp_err_t onApNatUplinkInput(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv);
 String webPasswordSectionHtml();
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.3";
+constexpr char FIRMWARE_VERSION[] = "3.4";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -160,6 +162,20 @@ struct ClientInfo {
 constexpr int MAX_CLIENT_INFOS = 16;
 ClientInfo clientInfos[MAX_CLIENT_INFOS] = {};
 portMUX_TYPE clientInfoLock = portMUX_INITIALIZER_UNLOCKED;
+
+// AP-Bridge: Geraete im Heimnetz, erkannt an ihren Rundsendungen (ARP, DHCP, Multicast) am LAN-Port
+struct Neighbor {
+  bool used;
+  uint8_t mac[6];
+  uint32_t ip;      // Netzwerk-Byte-Reihenfolge, 0 = unbekannt
+  char name[33];    // aus DHCP, leer = unbekannt
+  uint32_t lastMs;  // zuletzt gesehen
+};
+constexpr int MAX_NEIGHBORS = 32;
+Neighbor neighbors[MAX_NEIGHBORS] = {};
+portMUX_TYPE neighborLock = portMUX_INITIALIZER_UNLOCKED;
+volatile uint32_t homeIp = 0;    // eigene Adresse und Netzmaske im Heimnetz (Netzwerk-Byte-Reihenfolge)
+volatile uint32_t homeMask = 0;
 
 volatile int ethernetSpeedMbit = 0;
 volatile bool ethernetFullDuplex = false;
@@ -394,12 +410,77 @@ void copyClientName(char *target, const uint8_t *source, size_t length, bool sto
   target[used] = 0;
 }
 
+// Gehoert die Adresse zum Heimnetz? (fremde Adressen, z. B. vom Router weitergeleitete, nicht zuordnen)
+bool inHomeNet(uint32_t ip) {
+  if (ip == 0 || ip == 0xFFFFFFFFu) return false;
+  const uint32_t mask = homeMask;
+  if (mask != 0) return (ip & mask) == (homeIp & mask) && (ip & ~mask) != (~mask);  // ohne Broadcast-Adresse
+  const uint32_t host = __builtin_bswap32(ip);
+  return fwIsPrivateOrLocal(host) && (host >> 28) != 0xE;
+}
+
+void noteNeighbor(const uint8_t *mac, uint32_t ip, const char *name) {
+  if ((mac[0] & 0x01) || memcmp(mac, ethMac, 6) == 0 || fwIsApStation(mac)) return;
+  bool newName = false;
+  portENTER_CRITICAL(&neighborLock);
+  Neighbor *slot = nullptr;
+  Neighbor *freeSlot = nullptr;
+  Neighbor *oldest = nullptr;
+  for (Neighbor &entry : neighbors) {
+    if (!entry.used) {
+      if (freeSlot == nullptr) freeSlot = &entry;
+      continue;
+    }
+    if (memcmp(entry.mac, mac, 6) == 0) {
+      slot = &entry;
+      break;
+    }
+    if (oldest == nullptr || static_cast<int32_t>(entry.lastMs - oldest->lastMs) < 0) oldest = &entry;
+  }
+  if (slot == nullptr) {
+    slot = freeSlot != nullptr ? freeSlot : oldest;  // Liste voll: am laengsten nicht gesehenes Geraet ersetzen
+    memset(slot, 0, sizeof(*slot));
+    slot->used = true;
+    memcpy(slot->mac, mac, 6);
+  }
+  if (ip != 0) slot->ip = ip;
+  if (name != nullptr && name[0] != 0 && strcmp(slot->name, name) != 0) {
+    strncpy(slot->name, name, 32);
+    slot->name[32] = 0;
+    newName = true;
+  }
+  slot->lastMs = stampMs();
+  portEXIT_CRITICAL(&neighborLock);
+  if (newName) Serial.printf("Heimnetz: %02X:%02X:%02X:%02X:%02X:%02X heisst \"%s\"\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], name);
+}
+
+// AP-Bridge: Rundsendung aus dem Heimnetz auswerten (Absender-MAC, bei ARP und IPv4 auch die IP)
+void learnNeighbor(const uint8_t *frame, uint32_t len) {
+  if (len < BR_ETH_HEADER_LEN || !(frame[0] & 0x01)) return;  // nur Broadcast/Multicast
+  const uint8_t *src = frame + 6;
+  const uint16_t type = readBe16(frame + 12);
+  uint32_t ip = 0;
+  if (type == BR_ETHERTYPE_ARP) {
+    if (len < BR_ETH_HEADER_LEN + 28) return;
+    const uint8_t *arp = frame + BR_ETH_HEADER_LEN;
+    if (readBe16(arp) != 1 || readBe16(arp + 2) != BR_ETHERTYPE_IPV4 || memcmp(arp + 8, src, 6) != 0) return;
+    memcpy(&ip, arp + 14, 4);
+  } else if (type == BR_ETHERTYPE_IPV4) {
+    if (len < BR_ETH_HEADER_LEN + 20 || (frame[BR_ETH_HEADER_LEN] >> 4) != 4) return;
+    memcpy(&ip, frame + BR_ETH_HEADER_LEN + 12, 4);
+  } else if (type != 0x86DD) {
+    return;  // ausser IPv6 nichts anderes auswerten
+  }
+  noteNeighbor(src, inHomeNet(ip) ? ip : 0, nullptr);
+}
+
 // Liest DHCP-Pakete mit, ohne sie zu veraendern:
 //  - Anfrage eines Geraets (Port 68 -> 67): Geraetename (Option 12, sonst 81). In den NAT-Modi beantwortet
 //    der eigene DHCP-Server jede Anfrage (REQUEST) sofort - damit beginnt die Vergabe.
 //  - Bestaetigung (ACK) des Routers (Port 67 -> 68, Bridge-Modi): zugewiesene IP und Dauer (Option 51).
 // Darf aus jedem Task aufgerufen werden.
-void sniffDhcp(const uint8_t *frame, uint32_t len) {
+// homeNetwork: Paket kommt im AP-Bridge-Modus aus dem Heimnetz (Anfragen landen dann in der Heimnetz-Liste)
+void sniffDhcp(const uint8_t *frame, uint32_t len, bool homeNetwork = false) {
   if (len < BR_ETH_HEADER_LEN + 28 || readBe16(frame + 12) != BR_ETHERTYPE_IPV4) return;
   const uint8_t *ip = frame + BR_ETH_HEADER_LEN;
   if ((ip[0] >> 4) != 4 || ip[9] != 17) return;
@@ -437,6 +518,14 @@ void sniffDhcp(const uint8_t *frame, uint32_t len) {
         copyClientName(name, option + 5, option[1] - 3, true);
       }
     }
+    if (homeNetwork) {
+      uint32_t wanted = 0;
+      const uint8_t *requested = findDhcpOption(options, end, 50);
+      if (requested != nullptr && requested[1] == 4) memcpy(&wanted, requested + 2, 4);
+      else memcpy(&wanted, dhcp + 12, 4);  // ciaddr (Verlaengerung)
+      noteNeighbor(mac, inHomeNet(wanted) ? wanted : 0, name);
+      return;
+    }
     const bool ownServer = bridgeMode == MODE_NAT || bridgeMode == MODE_AP_NAT;
     bool newName = false;
     portENTER_CRITICAL(&clientInfoLock);
@@ -467,6 +556,14 @@ void sniffDhcp(const uint8_t *frame, uint32_t len) {
       info->touchedMs = millis();
     }
     portEXIT_CRITICAL(&clientInfoLock);
+    if (homeNetwork && info == nullptr && assigned != 0) {
+      // Bestaetigung fuer ein Geraet im Heimnetz (nur sichtbar, wenn der Router sie an alle schickt)
+      portENTER_CRITICAL(&neighborLock);
+      for (Neighbor &entry : neighbors) {
+        if (entry.used && memcmp(entry.mac, mac, 6) == 0) entry.ip = assigned;
+      }
+      portEXIT_CRITICAL(&neighborLock);
+    }
   }
 }
 
@@ -961,7 +1058,7 @@ String languageSwitchHtml() {
 // ---------------------------------------------------------------------------
 
 String pageHeader(const String &title) {
-  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:auto 1fr 1fr 2fr 1fr 3em;gap:6px;align-items:center;margin-top:6px}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input[type=checkbox]{width:auto}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}@media(max-width:600px){.fwrule{grid-template-columns:auto 1fr 1fr}.fwrule input[name$=_dst]{grid-column:span 2}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}.spark{display:block;width:100%;height:auto;margin:6px 0 2px;background:#fff;border:1px solid #d6e2ee;border-radius:8px}.spark .gl{stroke:#e3eaf1;stroke-width:1}.spark .vl{stroke:#e3eaf1;stroke-dasharray:4 4}.spark .yl,.spark .xl{font:13px Arial,sans-serif;fill:#6b7885}.spark .yl{text-anchor:end}.spark polyline{fill:none;stroke-width:2;stroke-linejoin:round}.spark .dn{stroke:#1263a6}.spark .up{stroke:#dd9a17}.spark .adn{fill:#1263a6;fill-opacity:.12}.spark .aup{fill:#dd9a17;fill-opacity:.15}.leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:#4b5865;margin-bottom:4px}.leg .sw{display:inline-block;width:12px;height:3px;border-radius:2px;margin:0 5px 3px 0;vertical-align:middle}.leg .sw.dn{background:#1263a6}.leg .sw.up{background:#dd9a17}span.dn{color:#1263a6}span.up{color:#a56d00}form:has(input[name=web_off]:checked) .pwfields{display:none}.card>.dangerbox{margin:0 0 16px}.dangerbox a{color:#7a1414;font-weight:bold}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}.cl{padding:9px 0;border-top:1px solid #d6e2ee}.cl:first-child{border-top:0}.cl div{display:flex;justify-content:space-between;gap:10px}.cl div span{color:#4b5865}.cl small{display:block;margin-top:3px}.mini{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px}.mini .bar{width:4px;border-radius:1px}</style></head><body><div class='card'>";
+  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:auto 1fr 1fr 2fr 1fr 3em;gap:6px;align-items:center;margin-top:6px}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input[type=checkbox]{width:auto}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}@media(max-width:600px){.fwrule{grid-template-columns:auto 1fr 1fr}.fwrule input[name$=_dst]{grid-column:span 2}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}.tw{overflow-x:auto}table.nb{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}table.nb th{text-align:left;font-size:12px;color:#4b5865;padding:4px}table.nb td{padding:6px 4px;border-top:1px solid #d6e2ee;vertical-align:top;white-space:nowrap}table.nb td small{display:block;color:#4b5865;font-size:12px}table.nb .mono{font-family:monospace;font-size:12px}table.nb tr.old{opacity:.55}.spark{display:block;width:100%;height:auto;margin:6px 0 2px;background:#fff;border:1px solid #d6e2ee;border-radius:8px}.spark .gl{stroke:#e3eaf1;stroke-width:1}.spark .vl{stroke:#e3eaf1;stroke-dasharray:4 4}.spark .yl,.spark .xl{font:13px Arial,sans-serif;fill:#6b7885}.spark .yl{text-anchor:end}.spark polyline{fill:none;stroke-width:2;stroke-linejoin:round}.spark .dn{stroke:#1263a6}.spark .up{stroke:#dd9a17}.spark .adn{fill:#1263a6;fill-opacity:.12}.spark .aup{fill:#dd9a17;fill-opacity:.15}.leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:#4b5865;margin-bottom:4px}.leg .sw{display:inline-block;width:12px;height:3px;border-radius:2px;margin:0 5px 3px 0;vertical-align:middle}.leg .sw.dn{background:#1263a6}.leg .sw.up{background:#dd9a17}span.dn{color:#1263a6}span.up{color:#a56d00}form:has(input[name=web_off]:checked) .pwfields{display:none}.card>.dangerbox{margin:0 0 16px}.dangerbox a{color:#7a1414;font-weight:bold}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}.cl{padding:9px 0;border-top:1px solid #d6e2ee}.cl:first-child{border-top:0}.cl div{display:flex;justify-content:space-between;gap:10px}.cl div span{color:#4b5865}.cl small{display:block;margin-top:3px}.mini{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px}.mini .bar{width:4px;border-radius:1px}</style></head><body><div class='card'>";
 }
 
 String pageFooter() { return "</div></body></html>"; }
@@ -1019,6 +1116,31 @@ String modeKey() {
   }
 }
 
+// AP-Bridge: Geraete im Heimnetz (zuletzt gesehen innerhalb von 24 h)
+String neighborsJson() {
+  Neighbor copy[MAX_NEIGHBORS];
+  portENTER_CRITICAL(&neighborLock);
+  memcpy(copy, neighbors, sizeof(copy));
+  portEXIT_CRITICAL(&neighborLock);
+  const uint32_t now = millis();
+  String json = "[";
+  bool first = true;
+  for (const Neighbor &entry : copy) {
+    if (!entry.used) continue;
+    const uint32_t ago = (now - entry.lastMs) / 1000;
+    if (ago > 86400) continue;
+    if (!first) json += ',';
+    first = false;
+    json += "{\"mac\":\"" + macToString(entry.mac) + "\",\"ip\":\"" + (entry.ip ? IPAddress(entry.ip).toString() : String("")) + "\",\"seen\":" + String(ago);
+    if (entry.name[0] != 0) json += ",\"name\":\"" + jsonEscape(String(entry.name)) + "\"";
+    const char *vendor = macVendor(entry.mac);
+    if (vendor != nullptr) json += ",\"vendor\":\"" + String(vendor) + "\"";
+    if (macIsPrivate(entry.mac)) json += ",\"private\":true";
+    json += "}";
+  }
+  return json + "]";
+}
+
 // AP-Modi: verbundene WLAN-Geraete mit Signal, IP, Name, Hersteller, Verbindungsdauer und Restlaufzeit der Vergabe
 String wifiClientsJson() {
   wifi_sta_list_t list{};
@@ -1056,6 +1178,7 @@ void showStatus() {
     const bool haveIp = ethernetNetif != nullptr && esp_netif_get_ip_info(ethernetNetif, &ip) == ESP_OK && ip.ip.addr != 0;
     json += ",\"uplink\":{\"ip\":\"" + (haveIp ? IPAddress(ip.ip.addr).toString() : String("")) + "\",\"gw\":\"" + (haveIp ? IPAddress(ip.gw.addr).toString() : String("")) + "\"}";
     json += ",\"wifiClients\":" + wifiClientsJson();
+    if (bridgeMode == MODE_AP_BRIDGE) json += ",\"neighbors\":" + neighborsJson();
   }
   json += ",\"fw\":" + firewallStatusJson();
   json += ",\"lan\":" + lanStatusJson() + "}";
@@ -1146,7 +1269,7 @@ const char *const JS_TEXT_DE = "var L={notConnected:'Nicht mit dem Router verbun
   "scanFail:'Die WLAN-Suche ist fehlgeschlagen. Bitte erneut versuchen.',none:'Keine WLANs gefunden.',hidden:'(verstecktes WLAN)',secured:' (gesichert)',"
   "selected:'Ausgew\\u00e4hlt: ',mismatch:'Die beiden Eingaben stimmen nicht \\u00fcberein.',confirmPw:'Passwort \\u00e4ndern? Die Bridge startet danach neu.',noUplink:'Kein Kabel erkannt. Verbinde den LAN-Port mit deinem Router.',homeIp:'IP der Bridge im Heimnetz',gateway:'Gateway',waitingIp:'wartet auf Adresse vom Router',noClients:'Noch keine WLAN-Ger\\u00e4te verbunden.',ackNeeded:'Bitte best\\u00e4tige den Hinweis zum Webinterface.',add:'zur Liste',pwNeeded:'Bitte ein WLAN-Passwort f\\u00fcr den Access Point festlegen (mindestens 8 Zeichen).',nextTry:'n\\u00e4chster Versuch in',"
   "name:'Ger\\u00e4tename',vendor:'Hersteller',noVendor:'Hersteller unbekannt',privMac:'Private MAC',privHint:'Zuf\\u00e4llige Adresse zum Schutz der Privatsph\\u00e4re \\u2013 der Hersteller ist daran nicht erkennbar.',"
-  "connFor:'verbunden seit',leaseShort:'Adresse g\\u00fcltig noch',leaseLeft:'Adresse g\\u00fcltig noch',expired:'abgelaufen',webPwShort:'Das Passwort muss mindestens 8 Zeichen lang sein.',rate:'Datenrate',peak:'H\\u00f6chstwert',total:'Daten seit Start',last2:'letzte 2 Minuten',now:'jetzt',dec:','};";
+  "connFor:'verbunden seit',leaseShort:'Adresse g\\u00fcltig noch',leaseLeft:'Adresse g\\u00fcltig noch',expired:'abgelaufen',webPwShort:'Das Passwort muss mindestens 8 Zeichen lang sein.',rate:'Datenrate',peak:'H\\u00f6chstwert',total:'Daten seit Start',last2:'letzte 2 Minuten',now:'jetzt',noNeighbors:'Noch keine Ger\\u00e4te erkannt.',router:'Router',seenCol:'Zuletzt',justNow:'gerade eben',agoA:'vor ',agoB:'',dec:','};";
 const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router',noCable:'No cable detected. Plug the cable firmly into the device and the bridge.',"
   "link:'Link',full:'full duplex',half:'half duplex',since:'Cable connected for',device:'Device',notDetected:'not detected yet (not sending anything)',"
   "noLease:'none assigned via DHCP yet',ip:'IP address',unknown:'not known yet',mac:'MAC address',seen:'Detected',assigned:'Address assigned',ago:' ago',"
@@ -1155,7 +1278,7 @@ const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router
   "scanFail:'The WiFi scan failed. Please try again.',none:'No WiFi networks found.',hidden:'(hidden network)',secured:' (secured)',"
   "selected:'Selected: ',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.',noUplink:'No cable detected. Connect the LAN port to your router.',homeIp:'Bridge IP in the home network',gateway:'Gateway',waitingIp:'waiting for an address from the router',noClients:'No WiFi devices connected yet.',ackNeeded:'Please confirm the note about the web interface.',add:'add to list',pwNeeded:'Please set a WiFi password for the access point (at least 8 characters).',nextTry:'next attempt in',"
   "name:'Device name',vendor:'Manufacturer',noVendor:'unknown manufacturer',privMac:'Private MAC',privHint:'Randomized address for privacy \\u2013 the manufacturer cannot be derived from it.',"
-  "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired',webPwShort:'The password must be at least 8 characters long.',rate:'Data rate',peak:'Peak',total:'Data since start',last2:'last 2 minutes',now:'now',dec:'.'};";
+  "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired',webPwShort:'The password must be at least 8 characters long.',rate:'Data rate',peak:'Peak',total:'Data since start',last2:'last 2 minutes',now:'now',noNeighbors:'No devices detected yet.',router:'Router',seenCol:'Last seen',justNow:'just now',agoA:'',agoB:' ago',dec:'.'};";
 
 // Alle 10 s eine Diagnosezeile im seriellen Log (hilft bei Verbindungsproblemen)
 void logDiagnostics() {
@@ -1235,10 +1358,15 @@ void showHome() {
     "</b><div id='lanInfo'>" + T("Wird geladen...", "Loading...") + "</div></div>";
   if (apMode) {
     linkState += String("<div class='status'><b>") + T("WLAN-Ger&auml;te", "WiFi devices") + "</b><div id='apClients'>" + T("Wird geladen...", "Loading...") + "</div></div>";
+    if (bridgeMode == MODE_AP_BRIDGE) {
+      linkState += String("<div class='status'><b>") + T("Ger&auml;te im Heimnetz", "Devices in the home network") + " <span id='nbCount'></span></b><div id='neighbors'>" + T("Wird geladen...", "Loading...") + "</div><p><small>" +
+        T("Erkannt an ihren Rundsendungen am LAN-Port: Ger&auml;te erscheinen, sobald sie im Netz etwas senden, Namen bei der n&auml;chsten Adressvergabe. Vollst&auml;ndig ist die Liste nur im Router.",
+          "Detected from their broadcasts on the LAN port: devices appear as soon as they send something on the network, names with their next address assignment. Only the router has the complete list.") + "</small></p></div>";
+    }
   }
 
   const String script = String("<script>") + (uiEnglish ? JS_TEXT_EN : JS_TEXT_DE) +
-    "function status(){fetch('/status').then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);showClients(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+(w.name?w.name+' \\u2013 ':'')+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{let t=w.name||w.ip||w.mac,d=[t!=w.mac?w.mac:'',maker(w)].filter(x=>x).join(' \\u00b7 '),x=bars(w.rssi)+' '+w.rssi+' dBm'+(w.phy?' \\u00b7 '+w.phy:'')+(w.since!=null?' \\u00b7 '+L.connFor+' '+short(w.since):'')+(w.leaseLeft!=null?' \\u00b7 '+L.leaseShort+' '+(w.leaseLeft?short(w.leaseLeft):L.expired):'');h+='<div class=\\'cl\\'><div><b>'+esc(t)+'</b>'+(w.name&&w.ip?'<span>'+w.ip+'</span>':'')+'</div><small>'+d+'</small><small>'+x+'</small></div>';});c.innerHTML=h;}function esc(t){return String(t).replace(/[&<>\"']/g,c=>'&#'+c.charCodeAt(0)+';');}function short(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60);return h?h+' h '+m+' min':m?m+' min':t+' s';}function maker(w){return w.vendor?esc(w.vendor):w.private?'<span title=\\''+L.privHint+'\\'>'+L.privMac+'</span>':L.noVendor;}function bars(r){let p=Math.max(0,Math.min(100,(r+90)*100/60)),n=Math.ceil(p/25),q=p<35?'weak':p<65?'fair':'good',h='<span class=\\'mini\\'>';for(let i=0;i<4;i++)h+='<i class=\\'bar'+(i<n?' on '+q:'')+'\\' style=\\'height:'+(i+1)*25+'%\\'></i>';return h+'</span>';}"
+    "function status(){fetch('/status').then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);showClients(s);showNeighbors(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+(w.name?w.name+' \\u2013 ':'')+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{let t=w.name||w.ip||w.mac,d=[t!=w.mac?w.mac:'',maker(w)].filter(x=>x).join(' \\u00b7 '),x=bars(w.rssi)+' '+w.rssi+' dBm'+(w.phy?' \\u00b7 '+w.phy:'')+(w.since!=null?' \\u00b7 '+L.connFor+' '+short(w.since):'')+(w.leaseLeft!=null?' \\u00b7 '+L.leaseShort+' '+(w.leaseLeft?short(w.leaseLeft):L.expired):'');h+='<div class=\\'cl\\'><div><b>'+esc(t)+'</b>'+(w.name&&w.ip?'<span>'+w.ip+'</span>':'')+'</div><small>'+d+'</small><small>'+x+'</small></div>';});c.innerHTML=h;}function esc(t){return String(t).replace(/[&<>\"']/g,c=>'&#'+c.charCodeAt(0)+';');}function short(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60);return h?h+' h '+m+' min':m?m+' min':t+' s';}function maker(w){return w.vendor?esc(w.vendor):w.private?'<span title=\\''+L.privHint+'\\'>'+L.privMac+'</span>':L.noVendor;}function bars(r){let p=Math.max(0,Math.min(100,(r+90)*100/60)),n=Math.ceil(p/25),q=p<35?'weak':p<65?'fair':'good',h='<span class=\\'mini\\'>';for(let i=0;i<4;i++)h+='<i class=\\'bar'+(i<n?' on '+q:'')+'\\' style=\\'height:'+(i+1)*25+'%\\'></i>';return h+'</span>';}"
     "function dur(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return (h?h+' h ':'')+(h||m?m+' min ':'')+x+' s';}"
     "var RH=[];function num(x,d){return x.toFixed(d).replace('.',L.dec);}"
     "function rate(b){return b>=1e6?num(b/1e6,1)+' Mbit/s':b>=1e3?num(b/1e3,0)+' kbit/s':b+' bit/s';}"
@@ -1253,6 +1381,14 @@ void showHome() {
     "let pl=j=>RH.map((r,i)=>X(i)+','+Y(r[j])).join(' '),ar=j=>n?X(0)+','+Y1+' '+pl(j)+' '+X(n-1)+','+Y1:'';"
     "return '<svg class=\\'spark\\' viewBox=\\'0 0 600 176\\' role=\\'img\\' aria-label=\\''+L.rate+'\\'>'+g+'<polygon class=\\'adn\\' points=\\''+ar(0)+'\\'/><polygon class=\\'aup\\' points=\\''+ar(1)+'\\'/><polyline class=\\'dn\\' points=\\''+pl(0)+'\\'/><polyline class=\\'up\\' points=\\''+pl(1)+'\\'/></svg>'"
     "+'<div class=\\'leg\\'><span><i class=\\'sw dn\\'></i>Download</span><span><i class=\\'sw up\\'></i>Upload</span><span>'+L.last2+'</span></div>';}"
+    "function ipNum(a){return a?a.split('.').reduce((x,y)=>x*256+ +y,0):1e10;}"
+    "function ago(t){return t<30?L.justNow:L.agoA+short(t)+L.agoB;}"
+    "function showNeighbors(s){let c=document.getElementById('neighbors');if(!c||!s.neighbors)return;let l=s.neighbors.slice().sort((a,b)=>ipNum(a.ip)-ipNum(b.ip));"
+    "document.getElementById('nbCount').textContent=l.length?'('+l.length+')':'';if(!l.length){c.textContent=L.noNeighbors;return;}"
+    "let h='<div class=\\'tw\\'><table class=\\'nb\\'><tr><th>'+L.ip+'</th><th>'+L.device+'</th><th>'+L.mac+'</th><th>'+L.seenCol+'</th></tr>';"
+    "l.forEach(n=>{let r=n.ip&&s.uplink&&n.ip==s.uplink.gw,nm=n.name?esc(n.name):r?L.router:'\\u2013';"
+    "h+='<tr'+(n.seen>600?' class=\\'old\\'':'')+'><td>'+(n.ip||'\\u2013')+'</td><td><b>'+nm+'</b><small>'+maker(n)+'</small></td><td class=\\'mono\\'>'+n.mac+'</td><td>'+ago(n.seen)+'</td></tr>';});"
+    "c.innerHTML=h+'</table></div>';}"
     "function row(k,v){return '<tr><td>'+k+'</td><td><b>'+v+'</b></td></tr>';}"
     "function showLan(s){let l=s.lan,br=s.mode=='bridge',ap=!!s.uplink,box=document.getElementById('lanInfo'),h='';"
     "if(!s.ethLink){box.innerHTML='<p class=\\'wait\\'>'+(ap?L.noUplink:L.noCable)+'</p>';return;}"
@@ -1933,6 +2069,8 @@ void onUplinkIpEvent(void *argument, esp_event_base_t eventBase, int32_t eventId
   Serial.printf("Uplink-IP vom Router: " IPSTR " (Gateway " IPSTR ")\n", IP2STR(&info->ip_info.ip), IP2STR(&info->ip_info.gw));
   fwRouterIp = toHostOrder(info->ip_info.gw.addr);
   fwOwnIpExtra = toHostOrder(info->ip_info.ip.addr);
+  homeIp = info->ip_info.ip.addr;
+  homeMask = info->ip_info.netmask.addr;
   if (bridgeMode == MODE_AP_NAT) apDnsUpdatePending = true;
 }
 
@@ -2077,7 +2215,8 @@ esp_err_t onUplinkFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, 
   }
   if (buffer[0] & 0x01) deliverCopyToBridge(buffer, len);  // Broadcast/Multicast: auch an die Bridge
   fwLearnDhcp(buffer, static_cast<uint16_t>(len));
-  sniffDhcp(buffer, len);  // DHCP-Bestaetigung des Routers fuer ein WLAN-Geraet
+  learnNeighbor(buffer, len);    // Geraete im Heimnetz
+  sniffDhcp(buffer, len, true);  // DHCP-Bestaetigung fuer WLAN-Geraete, Namen der Geraete im Heimnetz
   if (!fwCheckFrame(buffer, len, false)) {
     free(buffer);
     return ESP_OK;

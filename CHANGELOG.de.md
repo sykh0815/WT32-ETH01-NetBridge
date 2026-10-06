@@ -14,6 +14,18 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.4] – 06.10.2026
+
+### Neu
+- **Geräte im Heimnetz** (Betriebsart Access Point als Bridge): Tabelle mit IP-Adresse, Gerätename,
+  Hersteller, MAC-Adresse und „zuletzt gesehen“. Die Bridge erkennt die Geräte passiv an ihren
+  Rundsendungen am LAN-Port (ARP, DHCP, Multicast); Geräte erscheinen, sobald sie etwas senden, Namen
+  bei der nächsten Adressvergabe. Bis zu 32 Geräte; der Router wird als solcher gekennzeichnet.
+
+### Behoben
+- Access Point als Bridge: DHCP-Anfragen von Geräten im Heimnetz landen nicht mehr in der Infotabelle
+  der WLAN-Geräte (konnten dort Namen und Restlaufzeiten der WLAN-Geräte verdrängen).
+
 ## [3.3] – 06.10.2026
 
 ### Neu

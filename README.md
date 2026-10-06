@@ -62,6 +62,8 @@ All screenshots with descriptions: **[screenshot album](docs/SCREENSHOTS.md)**.
   - **Access point – WiFi straight into your home network (bridge)**: WiFi devices get their IP
     directly from your router. The web interface is then reachable via the IP the router assigns to
     the bridge (e.g. `http://wt32-eth01-netbridge.fritz.box`).
+- **Home network devices** (access point bridge): table with IP, name, manufacturer, MAC and "last
+  seen" of the devices in the home network, detected passively from their broadcasts.
 - **Live data rate on the LAN port**: current download/upload, chart of the last 2 minutes, peak
   values and data volume since start.
 - **Password protection for the web interface** (optional): login page, session cookie, only a salted
@@ -268,7 +270,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **3.3** – live data rate on the LAN port.
+Current version: **3.4** – table of the devices in the home network (access point bridge).
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 
