@@ -1,26 +1,30 @@
-# WT32-ETH01 Ethernet-WLAN-Bridge (ESP32 Ethernet to WiFi Bridge)
+# WT32 NetBridge – WT32-ETH01 Ethernet ⇄ WLAN Bridge & Access Point (ESP32 + LAN8720)
 
 🇬🇧 [English](README.md) | 🇩🇪 **Deutsch**
 
-[![Version](https://img.shields.io/badge/Version-2.9.1-1263a6)](CHANGELOG.de.md)
+[![Version](https://img.shields.io/badge/Version-3.0-1263a6)](CHANGELOG.de.md)
 [![Plattform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#bauen-und-flashen)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 2.9.1** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
+**Version 3.0** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
 
-Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die ein Gerät mit LAN-Anschluss per WLAN
-ins Netzwerk bringt: ein **WLAN-Adapter für Geräte ohne WLAN** oder eine **WLAN-Bridge für den
-Ethernet-Anschluss**, z. B. für Drucker, Smart-TV, Spielkonsole, NAS, SPS oder Messgeräte. Das Gerät
-wird per Kabel an den WT32-ETH01 angeschlossen, der WT32-ETH01 verbindet sich per WLAN mit dem Router.
+**WT32 NetBridge** ist eine Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die Ethernet und
+WLAN in beide Richtungen verbindet:
+
+- **WLAN-Client:** bringt ein Gerät mit LAN-Anschluss ins WLAN – ein **WLAN-Adapter für Geräte ohne
+  WLAN**, z. B. Drucker, Smart-TV, Spielkonsole, NAS, SPS oder Messgeräte.
+- **Access Point:** per Kabel am Router, spannt die NetBridge ein **eigenes WLAN** auf – als kleiner
+  Access Point, Gäste-WLAN oder WLAN-Erweiterung, auf Wunsch mit Firewall.
 
 <p align="center">
   <img src="docs/wt32-eth01.svg" alt="WT32-ETH01 Board mit RJ45-Buchse, LAN8720 PHY und ESP32-Modul (Illustration)" width="480">
 </p>
 
 ```
-[ Gerät mit LAN ] ──Kabel── [ WT32-ETH01 ] ))) WLAN ))) [ Router ] ── Internet
+WLAN-Client:   [ Gerät mit LAN ] ──Kabel── [ WT32 NetBridge ] ))) WLAN ))) [ Router ] ── Internet
+Access Point:  [ Handy, Laptop ] ))) WLAN ))) [ WT32 NetBridge ] ──Kabel── [ Router ] ── Internet
 ```
 
 ## Webinterface
@@ -55,7 +59,7 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
     eigenes WLAN (`192.168.4.x`) für bis zu ca. 8 Geräte auf. Das Webinterface bleibt erreichbar.
   - **Access Point – WLAN direkt im Heimnetz (Bridge)**: WLAN-Geräte bekommen ihre IP direkt vom
     Router. Das Webinterface ist dann über die IP erreichbar, die der Router der Bridge gibt
-    (z. B. `http://wt32-bridge.fritz.box`).
+    (z. B. `http://wt32-netbridge.fritz.box`).
 - **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt die Betriebsart auf NAT zurück.
 - **Einfache Firewall** für die angeschlossenen Geräte: „Nur Internet, kein Heimnetz“, Webinterface
   sperren, WLAN-Geräte trennen, bis zu 16 eigene Regeln mit Trefferzähler, MAC-Liste in den
@@ -127,7 +131,7 @@ Die Firmware braucht **Arduino-Core 3.x (ESP-IDF 5)**. Die `platformio.ini` nutz
 
 ## Einrichtung
 
-1. Mit dem WLAN **`WT32-Bridge-Setup`** verbinden. Beim ersten Start ist es **offen (ohne Passwort)**.
+1. Mit dem WLAN **`WT32-NetBridge-Setup`** verbinden. Beim ersten Start ist es **offen (ohne Passwort)**.
 2. Die Einrichtungsseite öffnet sich automatisch (Captive Portal, wie bei Hotel-WLANs). Falls nicht,
    `http://192.168.4.1` öffnen.
 3. Router-WLAN auswählen, Passwort eingeben, speichern.
@@ -140,7 +144,7 @@ Die Bridge kennt zwei Passwörter:
 
 | Passwort | Wo steht es? | Wie ändern? |
 |----------|--------------|-------------|
-| **Einrichtungs-WLAN** `WT32-Bridge-Setup` (anfangs **offen**, ohne Passwort) | im Flash des ESP32 (NVS); ein optionaler Standardwert lässt sich in `SETUP_AP_PASSWORD` in `src/main.cpp` setzen | im Webinterface unter „Einrichtungs-WLAN“ (8–63 Zeichen), die Bridge startet danach neu |
+| **Einrichtungs-WLAN** `WT32-NetBridge-Setup` (anfangs **offen**, ohne Passwort) | im Flash des ESP32 (NVS); ein optionaler Standardwert lässt sich in `SETUP_AP_PASSWORD` in `src/main.cpp` setzen | im Webinterface unter „Einrichtungs-WLAN“ (8–63 Zeichen), die Bridge startet danach neu |
 | **Router-WLAN** | im Flash des ESP32 (NVS), nicht im Code | im Webinterface unter „Router-WLAN“ neu eingeben und „Speichern und verbinden“ |
 
 > **Bewusst offenes WLAN:** In den WLAN-Einstellungen (und bei den Access-Point-Betriebsarten) lässt
@@ -204,9 +208,9 @@ WLAN-Geräte bekommen ihre Adressen direkt vom Router und sind im Heimnetz sicht
 Chromecast, Drucker).
 
 > **Hinweis:** In dieser Betriebsart ist das Webinterface **nicht mehr unter 192.168.4.1** erreichbar.
-> Die Bridge holt sich per DHCP eine eigene Adresse vom Router (Gerätename `wt32-bridge`); unter dieser
+> Die Bridge holt sich per DHCP eine eigene Adresse vom Router (Gerätename `wt32-netbridge`); unter dieser
 > Adresse ist das Webinterface erreichbar – aus dem Heimnetz und aus dem WLAN der Bridge, z. B.
-> `http://wt32-bridge.fritz.box` oder die IP aus der Geräteliste des Routers. Vor dem Umschalten fragt
+> `http://wt32-netbridge.fritz.box` oder die IP aus der Geräteliste des Routers. Vor dem Umschalten fragt
 > das Webinterface nach einer Bestätigung.
 >
 > **Zurück zur Einrichtung (Notfall-Reset):** die Stromversorgung **3-mal hintereinander** kurz aus-
@@ -252,7 +256,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **2.9.1** – Captive Portal; in den Access-Point-Betriebsarten stehen die WLAN-Einstellungen nur noch bei der Betriebsart.
+Aktuelle Version: **3.0** – das Projekt heißt jetzt **WT32 NetBridge** (vorher „WT32-ETH01 Ethernet-WLAN-Bridge“).
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

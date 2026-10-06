@@ -13,6 +13,18 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.0] – 2026-10-06
+
+### Changed
+- **New project name: WT32 NetBridge** (formerly "WT32-ETH01 Ethernet-WLAN-Bridge"), because the
+  firmware now works in both directions (WiFi client and access point). GitHub repository:
+  `WT32-ETH01-NetBridge`.
+- Web interface title, serial output and documentation use the new name.
+- **Default name of the setup WiFi is now `WT32-NetBridge-Setup`** and the hostname in the router
+  is now `wt32-netbridge` (e.g. `http://wt32-netbridge.fritz.box`). If you never changed the WiFi
+  name, the setup WiFi appears under the new name after the update; a name you set yourself is kept.
+- Combined firmware file in releases: `wt32-netbridge-vX.Y-full.bin`.
+
 ## [2.9.1] – 2026-10-06
 
 ### Changed

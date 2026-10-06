@@ -49,12 +49,12 @@ Time needed: about 20–30 minutes, much of it waiting for the tools to download
 ## 3. Download the project
 
 **Without Git:** on the GitHub project page click the green **Code** button, then
-**Download ZIP**. Unzip the file, e.g. to `Documents/WT32-ETH01-Bridge`.
+**Download ZIP**. Unzip the file, e.g. to `Documents/WT32-ETH01-NetBridge`.
 
 **With Git:**
 
 ```bash
-git clone https://github.com/<username>/WT32-ETH01-Bridge.git
+git clone https://github.com/<username>/WT32-ETH01-NetBridge.git
 ```
 
 Replace `<username>` with the GitHub name of the project, or copy the address via the **Code**
@@ -115,7 +115,7 @@ The blue status bar at the bottom has three important icons:
 4. Click **🔌 Serial Monitor**. Among other things you'll see:
 
    ```
-   WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.9.1
+   WT32 NetBridge (WT32-ETH01), Firmware 3.0
    Einrichtungsseite: http://192.168.4.1
    ```
 
@@ -125,7 +125,7 @@ wt32-eth01 → General**.
 ### In the terminal
 
 ```bash
-cd path/to/WT32-ETH01-Bridge
+cd path/to/WT32-ETH01-NetBridge
 pio run -t upload          # build and flash
 # disconnect IO0 from GND, restart the board
 pio device monitor         # show output, quit with Ctrl+C
@@ -142,7 +142,7 @@ monitor_port = /dev/cu.usbserial-0001
 
 ## 6. Set up the bridge
 
-1. Connect your phone or laptop to the WiFi **`WT32-Bridge-Setup`**.
+1. Connect your phone or laptop to the WiFi **`WT32-NetBridge-Setup`**.
    On first start it is **open**, no password needed (see section 7).
 2. The setup page opens **automatically** after connecting (captive portal; on an iPhone as a
    sign-in window, on Android as a "Sign in to network" notification). If not, open
@@ -159,7 +159,7 @@ monitor_port = /dev/cu.usbserial-0001
    appear right below the cards.
 
    > **Access point (bridge):** afterwards the web interface is no longer at 192.168.4.1 but at the
-   > IP your router assigns to the bridge, e.g. `http://wt32-bridge.fritz.box`. If needed, use the
+   > IP your router assigns to the bridge, e.g. `http://wt32-netbridge.fritz.box`. If needed, use the
    > emergency reset: switch the power off and on again 3 times in a row (each within 10 seconds).
 5. Connect the device to the LAN port with a network cable. Its IP and MAC address appear under
    "Device on the LAN port".
@@ -170,7 +170,7 @@ monitor_port = /dev/cu.usbserial-0001
 
 The bridge uses **two different** passwords.
 
-### Setup WiFi password (`WT32-Bridge-Setup`)
+### Setup WiFi password (`WT32-NetBridge-Setup`)
 
 This is the WiFi network the bridge creates itself so you can reach the web interface.
 
@@ -184,7 +184,7 @@ This is the WiFi network the bridge creates itself so you can reach the web inte
      the **Operating mode** section under "Access point WiFi" instead.
   3. Click **Set password** or **Change password**. The
      bridge restarts.
-  4. On your phone or laptop, "forget" the WiFi `WT32-Bridge-Setup` and reconnect with the new
+  4. On your phone or laptop, "forget" the WiFi `WT32-NetBridge-Setup` and reconnect with the new
      password.
 - **Rules:** 8 to 63 characters; letters, digits, spaces and common special characters only, no
   umlauts or other non-ASCII characters.
@@ -225,11 +225,11 @@ This is the WiFi network the bridge creates itself so you can reach the web inte
 | `Timed out waiting for packet header` | TX and RX swapped, or GND missing |
 | Upload stops halfway | add `upload_speed = 115200` to `platformio.ini` |
 | Board keeps restarting (`Brownout detector`) | power supply too weak: power it through the 5V pin |
-| No WiFi `WT32-Bridge-Setup` | IO0 still on GND (board waits in flash mode), or password shorter than 8 characters |
+| No WiFi `WT32-NetBridge-Setup` | IO0 still on GND (board waits in flash mode), or password shorter than 8 characters |
 | `LAN8720-Treiber konnte nicht gestartet werden` | check the board version (v1.4) and the power supply |
 | Compile errors about Ethernet functions | wrong platform: `platformio.ini` must use the pioarduino platform |
 | Old build leftovers | delete the `.pio` folder in the project and build again |
-| Web interface gone after switching to "Access point (bridge)" | it is now at the IP from the router: `http://wt32-bridge.fritz.box` or the router's device list ("wt32-bridge"); if needed, emergency reset (power off/on 3 times, each within 10 s) |
+| Web interface gone after switching to "Access point (bridge)" | it is now at the IP from the router: `http://wt32-netbridge.fritz.box` or the router's device list ("wt32-netbridge"); if needed, emergency reset (power off/on 3 times, each within 10 s) |
 | Setup WiFi barely responds at times | the bridge is searching for the router. Up to 2.6 this happened non-stop; from 2.6.1 only every 10–120 s. Check the router name, distance and 2.4 GHz; the web interface shows the reason |
 | Access point mode cannot be selected | set a WiFi password first |
 | Device has no internet after enabling the firewall | with "Everything else: block", allow DNS (UDP/TCP port 53) and the services you need with rules; the hit counters show which rule matches |
@@ -257,7 +257,7 @@ If the project's **Releases** section offers ready-made files (`bootloader.bin`,
    | `0xe000` | `boot_app0.bin` |
    | `0x10000` | `firmware.bin` |
 
-   Easier: add only the file `wt32-eth01-bridge-v…-full.bin` at address `0x0`; it contains all
+   Easier: add only the file `wt32-netbridge-v…-full.bin` at address `0x0`; it contains all
    four parts.
 
 4. Click **Program**, then disconnect IO0 from GND and restart.
