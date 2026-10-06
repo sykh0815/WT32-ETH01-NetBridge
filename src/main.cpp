@@ -759,13 +759,13 @@ void fwLoad() {
   fwDefaultBlock = preferences.getBool("fw_defblk", false);
   fwMacFilter = preferences.getBool("fw_macon", false);
   fwRuleCount = 0;
-  const size_t ruleBytes = preferences.getBytesLength("fw_rules");
+  const size_t ruleBytes = preferences.isKey("fw_rules") ? preferences.getBytesLength("fw_rules") : 0;  // isKey: keine Fehlermeldung, solange nichts gespeichert ist
   if (ruleBytes > 0 && ruleBytes % sizeof(FwRule) == 0 && ruleBytes <= sizeof(fwRules)) {
     preferences.getBytes("fw_rules", fwRules, ruleBytes);
     fwRuleCount = ruleBytes / sizeof(FwRule);
   }
   fwMacCount = 0;
-  const size_t macBytes = preferences.getBytesLength("fw_macs");
+  const size_t macBytes = preferences.isKey("fw_macs") ? preferences.getBytesLength("fw_macs") : 0;
   if (macBytes > 0 && macBytes % 6 == 0 && macBytes <= sizeof(fwMacs)) {
     preferences.getBytes("fw_macs", fwMacs, macBytes);
     fwMacCount = macBytes / 6;
@@ -2317,7 +2317,7 @@ void setup() {
     WiFi.setAutoReconnect(false);
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &onStaDisconnectEvent, nullptr);
     routerChannel = preferences.getUChar("r_chan", 0);
-    if (preferences.getBytesLength("r_bssid") != 6 || preferences.getBytes("r_bssid", routerBssid, 6) != 6) routerChannel = 0;
+    if (!preferences.isKey("r_bssid") || preferences.getBytesLength("r_bssid") != 6 || preferences.getBytes("r_bssid", routerBssid, 6) != 6) routerChannel = 0;
     connectToRouter();
     scheduleReconnect();
   }

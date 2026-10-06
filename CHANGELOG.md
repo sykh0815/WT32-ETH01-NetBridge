@@ -38,6 +38,9 @@ interface and the serial output.
   kept.
 - Combined firmware file in releases: `wt32-eth01-netbridge-vX.Y-full.bin`.
 
+### Fixed
+- No more `nvs_get_blob ... NOT_FOUND` error messages at startup when no firewall rules are saved.
+
 ## [3.0] – 2026-10-06
 
 ### Changed

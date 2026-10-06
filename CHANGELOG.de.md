@@ -40,6 +40,9 @@ der seriellen Ausgabe angezeigt.
   gewählter Name bleibt erhalten.
 - Kombinierte Firmware-Datei in Releases: `wt32-eth01-netbridge-vX.Y-full.bin`.
 
+### Behoben
+- Keine Fehlermeldungen `nvs_get_blob ... NOT_FOUND` mehr beim Start, solange keine Firewall-Regeln gespeichert sind.
+
 ## [3.0] – 06.10.2026
 
 ### Geändert
