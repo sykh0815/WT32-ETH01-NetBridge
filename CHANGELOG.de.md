@@ -33,8 +33,12 @@ der seriellen Ausgabe angezeigt.
 ### Geändert
 - **Projektname ist jetzt WT32-ETH01 NetBridge** (statt „WT32 NetBridge“), damit man das Projekt bei
   der Suche nach dem Board leichter findet. Titel im Webinterface, serielle Ausgabe, Dokumentation,
-  Banner und Vorschaubild verwenden den neuen Namen. Einrichtungs-WLAN (`WT32-NetBridge-Setup`) und
-  Hostname (`wt32-netbridge`) bleiben unverändert.
+  Banner und Vorschaubild verwenden den neuen Namen.
+- **Das Einrichtungs-WLAN heißt jetzt `WT32-ETH01-NetBridge-Setup`**, der Name im Router
+  `wt32-eth01-netbridge` (z. B. `http://wt32-eth01-netbridge.fritz.box`). Wer den WLAN-Namen nie
+  geändert hat, sieht das Einrichtungs-WLAN nach dem Update unter dem neuen Namen; ein selbst
+  gewählter Name bleibt erhalten.
+- Kombinierte Firmware-Datei in Releases: `wt32-eth01-netbridge-vX.Y-full.bin`.
 
 ## [3.0] – 06.10.2026
 

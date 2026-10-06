@@ -144,7 +144,7 @@ monitor_port = /dev/cu.usbserial-0001
 
 ## 6. Bridge einrichten
 
-1. Mit dem Handy oder Laptop mit dem WLAN **`WT32-NetBridge-Setup`** verbinden.
+1. Mit dem Handy oder Laptop mit dem WLAN **`WT32-ETH01-NetBridge-Setup`** verbinden.
    Beim ersten Start ist es **offen**, ein Passwort ist nicht nötig (siehe Abschnitt 7).
 2. Die Einrichtungsseite öffnet sich nach dem Verbinden **automatisch** (Captive Portal; auf dem
    iPhone als Anmeldefenster, auf Android als Hinweis „Im Netzwerk anmelden“). Falls nicht, im Browser
@@ -162,7 +162,7 @@ monitor_port = /dev/cu.usbserial-0001
    **WLAN-Name und Passwort** deines neuen WLANs.
 
    > **Access Point (Bridge):** Danach ist das Webinterface nicht mehr unter 192.168.4.1 erreichbar,
-   > sondern unter der IP, die der Router der Bridge gibt, z. B. `http://wt32-netbridge.fritz.box`.
+   > sondern unter der IP, die der Router der Bridge gibt, z. B. `http://wt32-eth01-netbridge.fritz.box`.
    > Notfalls hilft der Notfall-Reset: Stromversorgung 3-mal hintereinander kurz aus- und wieder
    > einschalten (jeweils innerhalb von 10 Sekunden).
 5. Das Gerät per Netzwerkkabel am LAN-Port anschließen. Unter „Gerät am LAN-Port“ erscheinen
@@ -174,7 +174,7 @@ monitor_port = /dev/cu.usbserial-0001
 
 Die Bridge arbeitet mit **zwei verschiedenen** Passwörtern.
 
-### Passwort des Einrichtungs-WLANs (`WT32-NetBridge-Setup`)
+### Passwort des Einrichtungs-WLANs (`WT32-ETH01-NetBridge-Setup`)
 
 Das ist das WLAN, das die Bridge selbst aufspannt, damit du das Webinterface erreichst.
 
@@ -187,7 +187,7 @@ Das ist das WLAN, das die Bridge selbst aufspannt, damit du das Webinterface err
      **Einrichtungs-WLAN** scrollen und das Passwort zweimal eingeben. In den Access-Point-Betriebsarten
      stehen Name und Passwort stattdessen im Abschnitt **Betriebsart** unter „WLAN des Access Points“.
   3. **Passwort festlegen** (bzw. **Passwort ändern**) klicken. Die Bridge startet neu.
-  4. Auf dem Handy oder Laptop das WLAN `WT32-NetBridge-Setup` „vergessen“ und mit dem neuen
+  4. Auf dem Handy oder Laptop das WLAN `WT32-ETH01-NetBridge-Setup` „vergessen“ und mit dem neuen
      Passwort neu verbinden.
 - **Regeln:** 8 bis 63 Zeichen, nur Buchstaben, Ziffern, Leerzeichen und übliche Sonderzeichen,
   keine Umlaute.
@@ -230,11 +230,11 @@ Das ist das WLAN, das die Bridge selbst aufspannt, damit du das Webinterface err
 | `Timed out waiting for packet header` | TX und RX vertauscht, oder GND fehlt |
 | Upload bricht mittendrin ab | in `platformio.ini` `upload_speed = 115200` eintragen |
 | Board startet ständig neu (`Brownout detector`) | Stromversorgung zu schwach: über den 5V-Pin versorgen |
-| Kein WLAN `WT32-NetBridge-Setup` | IO0 noch auf GND (Board wartet im Flash-Modus) oder Passwort kürzer als 8 Zeichen |
+| Kein WLAN `WT32-ETH01-NetBridge-Setup` | IO0 noch auf GND (Board wartet im Flash-Modus) oder Passwort kürzer als 8 Zeichen |
 | `LAN8720-Treiber konnte nicht gestartet werden` | Board-Version prüfen (v1.4), Stromversorgung prüfen |
 | Kompilierfehler zu Ethernet-Funktionen | falsche Plattform: in `platformio.ini` muss die pioarduino-Plattform stehen |
 | Alte Build-Reste | Ordner `.pio` im Projekt löschen und neu kompilieren |
-| Webinterface nach Wechsel auf „Access Point (Bridge)“ weg | es liegt jetzt unter der IP vom Router: `http://wt32-netbridge.fritz.box` oder Geräteliste des Routers („wt32-netbridge“); notfalls Notfall-Reset (3-mal Strom aus/an, jeweils innerhalb von 10 s) |
+| Webinterface nach Wechsel auf „Access Point (Bridge)“ weg | es liegt jetzt unter der IP vom Router: `http://wt32-eth01-netbridge.fritz.box` oder Geräteliste des Routers („wt32-eth01-netbridge“); notfalls Notfall-Reset (3-mal Strom aus/an, jeweils innerhalb von 10 s) |
 | Einrichtungs-WLAN reagiert zeitweise kaum | die Bridge sucht gerade den Router. Bis 2.6 geschah das pausenlos; ab 2.6.1 nur noch alle 10–120 s. Router-Namen, Abstand und 2,4 GHz prüfen; das Webinterface zeigt den Grund an |
 | Access-Point-Betriebsart lässt sich nicht wählen | zuerst ein WLAN-Passwort festlegen |
 | Gerät kommt nach Aktivieren der Firewall nicht mehr ins Internet | bei „Alles andere: sperren“ DNS (UDP/TCP Port 53) und die gewünschten Dienste per Regel erlauben; Trefferzähler zeigen, welche Regel greift |
@@ -262,7 +262,7 @@ Wenn im Bereich **Releases** des Projekts fertige Dateien (`bootloader.bin`, `pa
    | `0xe000` | `boot_app0.bin` |
    | `0x10000` | `firmware.bin` |
 
-   Einfacher: nur die Datei `wt32-netbridge-v…-full.bin` mit der Adresse `0x0` eintragen, sie
+   Einfacher: nur die Datei `wt32-eth01-netbridge-v…-full.bin` mit der Adresse `0x0` eintragen, sie
    enthält alle vier Teile.
 
 4. **Program** klicken, danach IO0 von GND trennen und neu starten.

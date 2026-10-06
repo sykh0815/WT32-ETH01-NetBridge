@@ -80,8 +80,10 @@ constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
 constexpr char FIRMWARE_VERSION[] = "3.1";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
-constexpr char BRIDGE_HOSTNAME[] = "wt32-netbridge";  // Name im Router (z. B. http://wt32-netbridge.fritz.box)
-constexpr char SETUP_AP_SSID[] = "WT32-NetBridge-Setup";
+constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
+constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
+// Fruehere Standardnamen des Einrichtungs-WLANs: gespeichert = nie selbst geaendert -> neuer Standardname
+const char *const OLD_SETUP_AP_SSIDS[] = {"WT32-NetBridge-Setup", "WT32-Bridge-Setup"};
 // Standard-Passwort des Einrichtungs-WLANs. Leer = offenes WLAN beim ersten Start; das Webinterface
 // fordert dann auffaellig dazu auf, ein Passwort festzulegen.
 constexpr char SETUP_AP_PASSWORD[] = "";
@@ -2234,6 +2236,9 @@ void setup() {
   routerSsid = preferences.getString("ssid", "");
   routerPassword = preferences.getString("password", "");
   apSsid = preferences.getString("ap_ssid", SETUP_AP_SSID);
+  for (const char *oldName : OLD_SETUP_AP_SSIDS) {
+    if (apSsid == oldName) apSsid = SETUP_AP_SSID;
+  }
   if (!isValidSsid(apSsid)) apSsid = SETUP_AP_SSID;
   setupApPassword = preferences.getString("ap_pass", SETUP_AP_PASSWORD);
   if (!isValidWifiPassword(setupApPassword)) setupApPassword = isValidWifiPassword(SETUP_AP_PASSWORD) ? SETUP_AP_PASSWORD : "";

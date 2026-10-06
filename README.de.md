@@ -59,7 +59,7 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
     eigenes WLAN (`192.168.4.x`) für bis zu ca. 8 Geräte auf. Das Webinterface bleibt erreichbar.
   - **Access Point – WLAN direkt im Heimnetz (Bridge)**: WLAN-Geräte bekommen ihre IP direkt vom
     Router. Das Webinterface ist dann über die IP erreichbar, die der Router der Bridge gibt
-    (z. B. `http://wt32-netbridge.fritz.box`).
+    (z. B. `http://wt32-eth01-netbridge.fritz.box`).
 - **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt die Betriebsart auf NAT zurück.
 - **Einfache Firewall** für die angeschlossenen Geräte: „Nur Internet, kein Heimnetz“, Webinterface
   sperren, WLAN-Geräte trennen, bis zu 16 eigene Regeln mit Trefferzähler, MAC-Liste in den
@@ -133,7 +133,7 @@ Die Firmware braucht **Arduino-Core 3.x (ESP-IDF 5)**. Die `platformio.ini` nutz
 
 ## Einrichtung
 
-1. Mit dem WLAN **`WT32-NetBridge-Setup`** verbinden. Beim ersten Start ist es **offen (ohne Passwort)**.
+1. Mit dem WLAN **`WT32-ETH01-NetBridge-Setup`** verbinden. Beim ersten Start ist es **offen (ohne Passwort)**.
 2. Die Einrichtungsseite öffnet sich automatisch (Captive Portal, wie bei Hotel-WLANs). Falls nicht,
    `http://192.168.4.1` öffnen.
 3. Router-WLAN auswählen, Passwort eingeben, speichern.
@@ -146,7 +146,7 @@ Die Bridge kennt zwei Passwörter:
 
 | Passwort | Wo steht es? | Wie ändern? |
 |----------|--------------|-------------|
-| **Einrichtungs-WLAN** `WT32-NetBridge-Setup` (anfangs **offen**, ohne Passwort) | im Flash des ESP32 (NVS); ein optionaler Standardwert lässt sich in `SETUP_AP_PASSWORD` in `src/main.cpp` setzen | im Webinterface unter „Einrichtungs-WLAN“ (8–63 Zeichen), die Bridge startet danach neu |
+| **Einrichtungs-WLAN** `WT32-ETH01-NetBridge-Setup` (anfangs **offen**, ohne Passwort) | im Flash des ESP32 (NVS); ein optionaler Standardwert lässt sich in `SETUP_AP_PASSWORD` in `src/main.cpp` setzen | im Webinterface unter „Einrichtungs-WLAN“ (8–63 Zeichen), die Bridge startet danach neu |
 | **Router-WLAN** | im Flash des ESP32 (NVS), nicht im Code | im Webinterface unter „Router-WLAN“ neu eingeben und „Speichern und verbinden“ |
 
 > **Bewusst offenes WLAN:** In den WLAN-Einstellungen (und bei den Access-Point-Betriebsarten) lässt
@@ -210,9 +210,9 @@ WLAN-Geräte bekommen ihre Adressen direkt vom Router und sind im Heimnetz sicht
 Chromecast, Drucker).
 
 > **Hinweis:** In dieser Betriebsart ist das Webinterface **nicht mehr unter 192.168.4.1** erreichbar.
-> Die Bridge holt sich per DHCP eine eigene Adresse vom Router (Gerätename `wt32-netbridge`); unter dieser
+> Die Bridge holt sich per DHCP eine eigene Adresse vom Router (Gerätename `wt32-eth01-netbridge`); unter dieser
 > Adresse ist das Webinterface erreichbar – aus dem Heimnetz und aus dem WLAN der Bridge, z. B.
-> `http://wt32-netbridge.fritz.box` oder die IP aus der Geräteliste des Routers. Vor dem Umschalten fragt
+> `http://wt32-eth01-netbridge.fritz.box` oder die IP aus der Geräteliste des Routers. Vor dem Umschalten fragt
 > das Webinterface nach einer Bestätigung.
 >
 > **Zurück zur Einrichtung (Notfall-Reset):** die Stromversorgung **3-mal hintereinander** kurz aus-

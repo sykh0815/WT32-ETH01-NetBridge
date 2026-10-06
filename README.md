@@ -61,7 +61,7 @@ All screenshots with descriptions: **[screenshot album](docs/SCREENSHOTS.md)**.
     its own WiFi (`192.168.4.x`) for up to approx. 8 devices. The web interface stays reachable.
   - **Access point – WiFi straight into your home network (bridge)**: WiFi devices get their IP
     directly from your router. The web interface is then reachable via the IP the router assigns to
-    the bridge (e.g. `http://wt32-netbridge.fritz.box`).
+    the bridge (e.g. `http://wt32-eth01-netbridge.fritz.box`).
 - **Emergency reset**: switching the power off and on 3 times in a row returns to NAT mode.
 - **Simple firewall** for the connected devices: "Internet only, no home network", block the web
   interface, isolate WiFi devices, up to 16 custom rules with hit counters, MAC allow list in the
@@ -134,7 +134,7 @@ The firmware requires **Arduino Core 3.x (ESP-IDF 5)**. `platformio.ini` uses th
 
 ## Setup
 
-1. Connect to the WiFi **`WT32-NetBridge-Setup`**. On first start it is **open (no password)**.
+1. Connect to the WiFi **`WT32-ETH01-NetBridge-Setup`**. On first start it is **open (no password)**.
 2. The setup page opens automatically (captive portal, like in hotel WiFis). If not, open
    `http://192.168.4.1`.
 3. Select your router's WiFi, enter the password, save.
@@ -147,7 +147,7 @@ The bridge uses two passwords:
 
 | Password | Where is it stored? | How to change it? |
 |----------|---------------------|-------------------|
-| **Setup WiFi** `WT32-NetBridge-Setup` (initially **open**, no password) | in the ESP32's flash (NVS); an optional default can be set in `SETUP_AP_PASSWORD` in `src/main.cpp` | in the web interface under "Setup WiFi" (8–63 characters), the bridge restarts |
+| **Setup WiFi** `WT32-ETH01-NetBridge-Setup` (initially **open**, no password) | in the ESP32's flash (NVS); an optional default can be set in `SETUP_AP_PASSWORD` in `src/main.cpp` | in the web interface under "Setup WiFi" (8–63 characters), the bridge restarts |
 | **Router WiFi** | in the ESP32's flash (NVS), not in the code | enter it again in the web interface under "Router WiFi" and click "Save and connect" |
 
 > **Open WiFi on purpose:** in the WiFi settings (and with the access point modes) you can tick
@@ -210,8 +210,8 @@ devices get their addresses directly from your router and are visible in the hom
 (AirPlay, Chromecast, printers).
 
 > **Note:** in this mode the web interface is **no longer at 192.168.4.1**. The bridge gets its own
-> address from your router via DHCP (hostname `wt32-netbridge`) and the web interface is reachable at
-> that address – from the home network and from the bridge's WiFi, e.g. `http://wt32-netbridge.fritz.box`
+> address from your router via DHCP (hostname `wt32-eth01-netbridge`) and the web interface is reachable at
+> that address – from the home network and from the bridge's WiFi, e.g. `http://wt32-eth01-netbridge.fritz.box`
 > or the IP shown in your router's device list. The web interface asks for a confirmation before
 > switching.
 >

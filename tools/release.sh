@@ -48,7 +48,7 @@ cp "$BUILD/bootloader.bin" "$BUILD/partitions.bin" "$BUILD/firmware.bin" "$BOOT_
 ASSETS=("$DIST/bootloader.bin" "$DIST/partitions.bin" "$DIST/boot_app0.bin" "$DIST/firmware.bin")
 
 # Komplett-Datei (alles ab Adresse 0x0) fuer Web-Flasher / single file at 0x0 for web flashers
-FULL="$DIST/wt32-netbridge-$TAG-full.bin"
+FULL="$DIST/wt32-eth01-netbridge-$TAG-full.bin"
 MERGE_ARGS=(--chip esp32 merge_bin -o "$FULL" --flash_mode keep --flash_freq keep --flash_size keep
             0x1000 "$DIST/bootloader.bin" 0x8000 "$DIST/partitions.bin" 0xe000 "$DIST/boot_app0.bin" 0x10000 "$DIST/firmware.bin")
 if pio pkg exec -p tool-esptoolpy -- esptool.py "${MERGE_ARGS[@]}" >/dev/null 2>&1 \
@@ -79,7 +79,7 @@ NOTES="$DIST/RELEASE_NOTES.md"
 | `partitions.bin` | `0x8000` |
 | `boot_app0.bin` | `0xe000` |
 | `firmware.bin` | `0x10000` |
-| `wt32-netbridge-…-full.bin` (if present / falls vorhanden) | `0x0` |
+| `wt32-eth01-netbridge-…-full.bin` (if present / falls vorhanden) | `0x0` |
 
 Flash in the browser with / im Browser flashen mit <https://espressif.github.io/esptool-js/> (Chrome/Edge).
 Updating from an older version keeps all settings / Beim Update bleiben alle Einstellungen erhalten.
