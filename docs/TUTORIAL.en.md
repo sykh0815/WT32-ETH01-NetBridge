@@ -115,7 +115,7 @@ The blue status bar at the bottom has three important icons:
 4. Click **🔌 Serial Monitor**. Among other things you'll see:
 
    ```
-   WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.8
+   WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.9.1
    Einrichtungsseite: http://192.168.4.1
    ```
 
@@ -144,7 +144,9 @@ monitor_port = /dev/cu.usbserial-0001
 
 1. Connect your phone or laptop to the WiFi **`WT32-Bridge-Setup`**.
    On first start it is **open**, no password needed (see section 7).
-2. Open **http://192.168.4.1** in the browser. The page follows your browser language; use the
+2. The setup page opens **automatically** after connecting (captive portal; on an iPhone as a
+   sign-in window, on Android as a "Sign in to network" notification). If not, open
+   **http://192.168.4.1** in the browser. The page follows your browser language; use the
    flag buttons **DE / EN** at the top right to switch between German and English.
 3. Click **Search for WiFi networks**, tap your router's WiFi, enter the password and click
    **Save and connect**.
@@ -178,7 +180,8 @@ This is the WiFi network the bridge creates itself so you can reach the web inte
 - **Set or change it in the web interface:**
   1. Connect to the setup WiFi and open http://192.168.4.1.
   2. Tap **Set a password now** in the red warning, or scroll down to the section
-     **Setup WiFi**, and enter the password twice.
+     **Setup WiFi**, and enter the password twice. In the access point modes, name and password are in
+     the **Operating mode** section under "Access point WiFi" instead.
   3. Click **Set password** or **Change password**. The
      bridge restarts.
   4. On your phone or laptop, "forget" the WiFi `WT32-Bridge-Setup` and reconnect with the new

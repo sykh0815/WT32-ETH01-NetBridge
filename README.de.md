@@ -2,13 +2,13 @@
 
 🇬🇧 [English](README.md) | 🇩🇪 **Deutsch**
 
-[![Version](https://img.shields.io/badge/Version-2.8-1263a6)](CHANGELOG.de.md)
+[![Version](https://img.shields.io/badge/Version-2.9.1-1263a6)](CHANGELOG.de.md)
 [![Plattform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#bauen-und-flashen)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 2.8** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
+**Version 2.9.1** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
 
 Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die ein Gerät mit LAN-Anschluss per WLAN
 ins Netzwerk bringt: ein **WLAN-Adapter für Geräte ohne WLAN** oder eine **WLAN-Bridge für den
@@ -60,6 +60,8 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
 - **Einfache Firewall** für die angeschlossenen Geräte: „Nur Internet, kein Heimnetz“, Webinterface
   sperren, WLAN-Geräte trennen, bis zu 16 eigene Regeln mit Trefferzähler, MAC-Liste in den
   Access-Point-Betriebsarten.
+- **Captive Portal**: Nach dem Verbinden mit dem Einrichtungs-WLAN öffnet sich die Einrichtungsseite
+  automatisch.
 - **Webinterface** auf **Deutsch und Englisch** (umschaltbar per Flaggen-Button) über ein eigenes
   Einrichtungs-WLAN (Passwort im Webinterface änderbar):
   - WLAN-Suche und Eingabe der Router-Zugangsdaten
@@ -126,7 +128,8 @@ Die Firmware braucht **Arduino-Core 3.x (ESP-IDF 5)**. Die `platformio.ini` nutz
 ## Einrichtung
 
 1. Mit dem WLAN **`WT32-Bridge-Setup`** verbinden. Beim ersten Start ist es **offen (ohne Passwort)**.
-2. `http://192.168.4.1` öffnen.
+2. Die Einrichtungsseite öffnet sich automatisch (Captive Portal, wie bei Hotel-WLANs). Falls nicht,
+   `http://192.168.4.1` öffnen.
 3. Router-WLAN auswählen, Passwort eingeben, speichern.
 4. Ein Passwort für das Einrichtungs-WLAN festlegen (bis dahin zeigt das Webinterface eine rote Warnung).
 5. Gerät per Kabel am LAN-Port anschließen.
@@ -249,7 +252,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **2.8** – optional offenes WLAN ohne Passwort (mit sichtbarer Warnung).
+Aktuelle Version: **2.9.1** – Captive Portal; in den Access-Point-Betriebsarten stehen die WLAN-Einstellungen nur noch bei der Betriebsart.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

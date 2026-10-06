@@ -117,7 +117,7 @@ In der blauen Statusleiste unten gibt es drei wichtige Symbole:
 4. Auf **🔌 Serial Monitor** klicken. Es erscheint unter anderem:
 
    ```
-   WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.8
+   WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.9.1
    Einrichtungsseite: http://192.168.4.1
    ```
 
@@ -146,7 +146,9 @@ monitor_port = /dev/cu.usbserial-0001
 
 1. Mit dem Handy oder Laptop mit dem WLAN **`WT32-Bridge-Setup`** verbinden.
    Beim ersten Start ist es **offen**, ein Passwort ist nicht nötig (siehe Abschnitt 7).
-2. Im Browser **http://192.168.4.1** öffnen. Die Seite richtet sich nach der Sprache des Browsers;
+2. Die Einrichtungsseite öffnet sich nach dem Verbinden **automatisch** (Captive Portal; auf dem
+   iPhone als Anmeldefenster, auf Android als Hinweis „Im Netzwerk anmelden“). Falls nicht, im Browser
+   **http://192.168.4.1** öffnen. Die Seite richtet sich nach der Sprache des Browsers;
    mit den Flaggen-Buttons **DE / EN** oben rechts lässt sie sich zwischen Deutsch und Englisch
    umschalten.
 3. **Verfügbare WLANs suchen**, dein Router-WLAN antippen, Passwort eingeben,
@@ -182,7 +184,8 @@ Das ist das WLAN, das die Bridge selbst aufspannt, damit du das Webinterface err
 - **Festlegen oder ändern im Webinterface:**
   1. Mit dem Einrichtungs-WLAN verbinden und http://192.168.4.1 öffnen.
   2. In der roten Warnung auf **Jetzt Passwort festlegen** tippen oder ganz unten zum Abschnitt
-     **Einrichtungs-WLAN** scrollen und das Passwort zweimal eingeben.
+     **Einrichtungs-WLAN** scrollen und das Passwort zweimal eingeben. In den Access-Point-Betriebsarten
+     stehen Name und Passwort stattdessen im Abschnitt **Betriebsart** unter „WLAN des Access Points“.
   3. **Passwort festlegen** (bzw. **Passwort ändern**) klicken. Die Bridge startet neu.
   4. Auf dem Handy oder Laptop das WLAN `WT32-Bridge-Setup` „vergessen“ und mit dem neuen
      Passwort neu verbinden.

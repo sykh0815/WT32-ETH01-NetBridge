@@ -14,6 +14,26 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [2.9.1] – 06.10.2026
+
+### Geändert
+- In den Access-Point-Betriebsarten entfällt der separate Abschnitt „WLAN (Access Point)“ unten; Name
+  und Passwort stehen (und ändern sich) nur noch bei der Betriebsart unter „WLAN des Access Points“.
+  Die Links in den Warnhinweisen springen dorthin. In den Client-Betriebsarten bleibt der Abschnitt
+  „Einrichtungs-WLAN“ erhalten.
+
+## [2.9] – 06.10.2026
+
+### Neu
+- **Captive Portal** für das Einrichtungs-WLAN: Nach dem Verbinden öffnen Handys und Laptops die
+  Einrichtungsseite automatisch (iOS-Anmeldefenster, Android „Im Netzwerk anmelden“,
+  Windows/macOS-Hinweis). Die Bridge beantwortet im Einrichtungs-WLAN alle DNS-Anfragen mit
+  192.168.4.1 und leitet die Verbindungstests der Betriebssysteme auf die Einrichtungsseite um.
+- Nur in den Client-Betriebsarten (NAT, Bridge); in den Access-Point-Betriebsarten ist das WLAN ein
+  normales Netz, dort funktioniert DNS wie gewohnt.
+- Diagnosezeile im seriellen Log alle 10 s (Betriebsart, Router-Verbindung und Verbindungsversuche,
+  verbundene WLAN-Geräte, Kanal, freier Speicher).
+
 ## [2.8] – 06.10.2026
 
 ### Neu

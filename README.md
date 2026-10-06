@@ -2,13 +2,13 @@
 
 🇬🇧 **English** | 🇩🇪 [Deutsch](README.de.md)
 
-[![Version](https://img.shields.io/badge/Version-2.8-1263a6)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.9.1-1263a6)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#build-and-flash)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 2.8** – see the [changelog](CHANGELOG.md)
+**Version 2.9.1** – see the [changelog](CHANGELOG.md)
 
 Firmware for the **WT32-ETH01 v1.4** (ESP32 + LAN8720) that brings a device with an Ethernet port
 into your WiFi network: a **WiFi adapter for devices without WiFi**, or a **wireless bridge for the
@@ -61,6 +61,7 @@ All screenshots with descriptions: **[screenshot album](docs/SCREENSHOTS.md)**.
 - **Simple firewall** for the connected devices: "Internet only, no home network", block the web
   interface, isolate WiFi devices, up to 16 custom rules with hit counters, MAC allow list in the
   access point modes.
+- **Captive portal**: after connecting to the setup WiFi, the setup page opens automatically.
 - **Web interface** in **English and German** (switchable via flag buttons) via a dedicated setup
   WiFi (password changeable in the web interface):
   - WiFi scan and entry of the router credentials
@@ -127,7 +128,8 @@ The firmware requires **Arduino Core 3.x (ESP-IDF 5)**. `platformio.ini` uses th
 ## Setup
 
 1. Connect to the WiFi **`WT32-Bridge-Setup`**. On first start it is **open (no password)**.
-2. Open `http://192.168.4.1`.
+2. The setup page opens automatically (captive portal, like in hotel WiFis). If not, open
+   `http://192.168.4.1`.
 3. Select your router's WiFi, enter the password, save.
 4. Set a password for the setup WiFi (the web interface shows a red warning until you do).
 5. Connect the device to the LAN port.
@@ -249,7 +251,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **2.8** – optional open WiFi without password (with a visible warning).
+Current version: **2.9.1** – captive portal; in the access point modes the WiFi settings are only shown with the operating mode.
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 
@@ -264,7 +266,7 @@ If this project helps you, I'd be happy about a coffee:
 The serial output (115200 baud) shows the current state, for example:
 
 ```
-WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.8
+WT32-ETH01 Ethernet-WLAN-Bridge, Firmware 2.9.1
 Betriebsart: NAT
 DHCP server started on interface ETH_LAN with IP: 192.168.50.1
 Ethernet-LAN: 192.168.50.1, DHCP-Server laeuft

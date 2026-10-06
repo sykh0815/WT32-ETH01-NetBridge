@@ -13,6 +13,25 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [2.9.1] – 2026-10-06
+
+### Changed
+- In the access point modes the separate "WiFi (access point)" section at the bottom is gone; name
+  and password are only shown (and changed) with the operating mode under "Access point WiFi". The
+  warning links jump there. In the client modes the "Setup WiFi" section stays.
+
+## [2.9] – 2026-10-06
+
+### Added
+- **Captive portal** for the setup WiFi: after connecting, phones and laptops open the setup page
+  automatically (iOS sign-in window, Android "Sign in to network", Windows/macOS notification). The
+  bridge answers all DNS queries in the setup WiFi with 192.168.4.1 and redirects the connectivity
+  checks of the operating systems to the setup page.
+- Only in the client modes (NAT, bridge); in the access point modes the WiFi is a normal network and
+  DNS works as usual.
+- Diagnostic line in the serial output every 10 s (mode, router connection and reconnect attempts,
+  connected WiFi devices, channel, free memory).
+
 ## [2.8] – 2026-10-06
 
 ### Added

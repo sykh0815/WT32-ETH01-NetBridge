@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <Preferences.h>
 #include <esp_event.h>
 #include <esp_netif.h>
@@ -42,6 +43,7 @@ void showStatus();
 void showNetworks();
 void showHome();
 void connectToRouter();
+void logDiagnostics();
 void handleRouterConnection();
 void onStaDisconnectEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData);
 const char *staReasonText();
@@ -75,7 +77,7 @@ void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, v
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "2.8";
+constexpr char FIRMWARE_VERSION[] = "2.9.1";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-bridge";  // Name im Router (z. B. http://wt32-bridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-Bridge-Setup";
 // Standard-Passwort des Einrichtungs-WLANs. Leer = offenes WLAN beim ersten Start; das Webinterface
@@ -83,6 +85,8 @@ constexpr char SETUP_AP_SSID[] = "WT32-Bridge-Setup";
 constexpr char SETUP_AP_PASSWORD[] = "";
 
 WebServer webServer(80);
+DNSServer dnsServer;          // Captive Portal: beantwortet im Einrichtungs-WLAN jede Namensanfrage mit 192.168.4.1
+bool captivePortal = false;
 Preferences preferences;
 BridgeMode bridgeMode = MODE_NAT;
 esp_netif_t *ethernetNetif = nullptr;
@@ -916,7 +920,46 @@ const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router
   "scanFail:'The WiFi scan failed. Please try again.',none:'No WiFi networks found.',hidden:'(hidden network)',secured:' (secured)',"
   "selected:'Selected: ',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.',noUplink:'No cable detected. Connect the LAN port to your router.',homeIp:'Bridge IP in the home network',gateway:'Gateway',waitingIp:'waiting for an address from the router',noClients:'No WiFi devices connected yet.',ackNeeded:'Please confirm the note about the web interface.',add:'add to list',pwNeeded:'Please set a WiFi password for the access point (at least 8 characters).',nextTry:'next attempt in'};";
 
+// Alle 10 s eine Diagnosezeile im seriellen Log (hilft bei Verbindungsproblemen)
+void logDiagnostics() {
+  static uint32_t last = 0;
+  if (millis() - last < 10000) return;
+  last = millis();
+  uint8_t channel = 0;
+  wifi_second_chan_t second;
+  esp_wifi_get_channel(&channel, &second);
+  const char *modeNames[] = {"NAT", "Bridge", "AP-NAT", "AP-Bridge"};
+  String router = "-";
+  if (!isApMode()) {
+    if (wifiConnected) router = "verbunden";
+    else if (routerSsid.isEmpty()) router = "nicht eingerichtet";
+    else {
+      const int32_t wait = nextConnectAttemptMs ? static_cast<int32_t>(nextConnectAttemptMs - millis()) / 1000 : 0;
+      router = "getrennt (Grund " + String(lastStaDisconnectReason) + "), Versuche " + String(failedConnectAttempts) + ", naechster in " + String(wait > 0 ? wait : 0) + " s";
+    }
+  }
+  Serial.printf("Diag: %lus | %s | Router: %s | WLAN-Geraete: %d | Kanal %u | Heap frei %u, min %u, Block %u\n",
+                static_cast<unsigned long>(millis() / 1000), modeNames[bridgeMode], router.c_str(), WiFi.softAPgetStationNum(), channel,
+                static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
+}
+
+// Captive Portal: Anfragen von Geraeten im Einrichtungs-WLAN an fremde Adressen (z. B. die
+// Verbindungstests von Android, iOS, Windows) auf die Einrichtungsseite umleiten. Dadurch oeffnet
+// das Handy/Notebook die Seite nach dem Verbinden automatisch.
+bool captiveRedirect() {
+  if (!captivePortal) return false;
+  const uint32_t remote = static_cast<uint32_t>(webServer.client().remoteIP());
+  if ((remote & 0x00FFFFFFu) != 0x0004A8C0u) return false;  // nur Geraete aus 192.168.4.x
+  const String host = webServer.hostHeader();
+  if (host == "192.168.4.1" || host.startsWith("192.168.4.1:")) return false;
+  webServer.sendHeader("Location", "http://192.168.4.1/");
+  webServer.sendHeader("Cache-Control", "no-store");
+  webServer.send(302, "text/plain", "");
+  return true;
+}
+
 void showHome() {
+  if (captiveRedirect()) return;
   detectLanguage();
   const bool bridge = bridgeMode == MODE_BRIDGE;
   const bool apNat = bridgeMode == MODE_AP_NAT;
@@ -1006,15 +1049,18 @@ void showHome() {
 
   // WLAN-Name und Passwort direkt bei den Access-Point-Karten (nur sichtbar, wenn eine davon gewaehlt ist)
   const bool apHasPassword = !setupApPassword.isEmpty();
-  const String apFields = String("<div class='apfields'><b>") + T("WLAN des Access Points", "Access point WiFi") + "</b>"
+  // In den Access-Point-Modi sind das die einzigen WLAN-Einstellungen (Sprungziel #ap fuer die Warnhinweise)
+  const String apFields = String("<div class='apfields'") + (apMode ? " id='ap'" : "") + "><b>" + T("WLAN des Access Points", "Access point WiFi") + "</b>"
     "<label>" + T("WLAN-Name", "WiFi name") + "<input name='m_ssid' maxlength='32' value='" + htmlEscape(apSsid) + "'></label>"
     "<label class='chk'><input type='checkbox' name='m_open' value='1'" + (apOpenChosen ? " checked" : "") + "><span><b>" + T("Offenes WLAN ohne Passwort", "Open WiFi without password") + "</b><small>" +
       T("Nur f&uuml;r besondere F&auml;lle, z. B. ein G&auml;ste-WLAN mit aktiver Firewall.", "Only for special cases, e.g. a guest WiFi with the firewall enabled.") + "</small></span></label>" + openWifiWarningHtml() +
     "<div class='pwfields'><label>" + T("Passwort", "Password") + "<input name='m_pass' type='password' minlength='8' maxlength='63' autocomplete='new-password' placeholder='" +
       (apHasPassword ? T("Leer lassen, um das bisherige zu behalten", "Leave empty to keep the current one") : T("mindestens 8 Zeichen", "at least 8 characters")) + "'></label>"
     "<label>" + T("Passwort wiederholen", "Repeat password") + "<input name='m_repeat' type='password' minlength='8' maxlength='63' autocomplete='new-password'></label></div>"
-    "<p><small>" + T("Mit diesem Namen und Passwort verbinden sich deine Ger&auml;te. Es ist dasselbe WLAN wie unten unter &bdquo;Einrichtungs-WLAN&ldquo;.",
-                     "Your devices connect with this name and password. It is the same WiFi as below under \"Setup WiFi\".") + "</small></p></div>";
+    "<p><small>" + (apMode ? T("Mit diesem Namen und Passwort verbinden sich deine Ger&auml;te. &Auml;nderungen werden mit &bdquo;&Uuml;bernehmen und neu starten&ldquo; gespeichert.",
+                                 "Your devices connect with this name and password. Changes are saved with \"Apply and restart\".")
+                    : T("Mit diesem Namen und Passwort verbinden sich deine Ger&auml;te. Es ist dasselbe WLAN wie unten unter &bdquo;Einrichtungs-WLAN&ldquo;.",
+                        "Your devices connect with this name and password. It is the same WiFi as below under \"Setup WiFi\".")) + "</small></p></div>";
 
   const String modeForm = String("<h2>") + T("Betriebsart", "Operating mode") + "</h2>"
     "<form method='post' action='/mode' onsubmit=\"var m=this.querySelector('input[name=mode]:checked');if(!m)return true;"
@@ -1097,7 +1143,8 @@ void showHome() {
   const String html = pageHeader(T("WT32 Ethernet-WLAN-Bridge", "WT32 Ethernet WiFi Bridge")) + languageSwitchHtml() +
     "<h1>" + T("Ethernet-WLAN-Bridge", "Ethernet WiFi Bridge") + "</h1>" + apAlert + routerState + (apMode ? String("") : signalMeterHtml()) + ethernetState + linkState +
     (bridgeMode == MODE_AP_BRIDGE ? String("") : String("<p>") + (apMode ? T("Diese Seite ist im WLAN erreichbar unter ", "This page is reachable in the WiFi at ") : T("Diese Seite bleibt &uuml;ber das Einrichtungs-WLAN erreichbar: ", "This page stays reachable through the setup WiFi: ")) + "<b>192.168.4.1</b>.</p>") +
-    routerSection + modeForm + firewallSectionHtml() + apForm + footer + "<p><small>" + T("Firmware-Version ", "Firmware version ") + FIRMWARE_VERSION + "</small></p>" + script + pageFooter();
+    // In den Access-Point-Modi stehen Name und Passwort direkt bei der Betriebsart; der separate Abschnitt entfaellt
+    routerSection + modeForm + firewallSectionHtml() + (apMode ? String("") : apForm) + footer + "<p><small>" + T("Firmware-Version ", "Firmware version ") + FIRMWARE_VERSION + "</small></p>" + script + pageFooter();
   webServer.send(200, "text/html; charset=utf-8", html);
 }
 
@@ -2003,8 +2050,14 @@ void setup() {
     WiFi.setHostname(BRIDGE_HOSTNAME);
     WiFi.mode(WIFI_MODE_APSTA);
     WiFi.setSleep(false);  // kein WLAN-Energiesparen: geringere Latenz, stabilere Bridge
-    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+    // DNS-Server fuer die Geraete im Einrichtungs-WLAN ist die Bridge selbst (Captive Portal)
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0), IPAddress((uint32_t)0), IPAddress(192, 168, 4, 1));
     WiFi.softAP(apSsid.c_str(), apPassword);
+    // Captive Portal nur im Einrichtungs-WLAN der Client-Betriebsarten. In den Access-Point-Modi ist das
+    // WLAN ein normales Netz fuer Geraete, dort muss DNS ganz normal funktionieren.
+    dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+    captivePortal = dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
+    if (captivePortal) Serial.println("Captive Portal aktiv: Einrichtungsseite oeffnet sich nach dem Verbinden automatisch");
     esp_wifi_get_mac(WIFI_IF_STA, staMac);
     if (bridgeMode == MODE_BRIDGE) {
       // Nach WiFi.mode() registrieren, damit dieser Handler nach denen von ESP-IDF/Arduino laeuft.
@@ -2062,7 +2115,9 @@ void loop() {
     lastOwnIpUpdate = millis();
     fwOwnIpExtra = wifiConnected ? toHostOrder(static_cast<uint32_t>(WiFi.localIP())) : 0;
   }
+  if (captivePortal) dnsServer.processNextRequest();
   webServer.handleClient();
+  logDiagnostics();
   // Falls die Seite geschlossen wurde, bevor das Scan-Ergebnis abgeholt war
   if (scanPausedConnect && millis() - scanStartedMs > 20000) {
     WiFi.scanDelete();
