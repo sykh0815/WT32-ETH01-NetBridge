@@ -13,6 +13,31 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.6.1] – 2026-10-07
+
+### Fixed
+- **Empty web interface page** after the update to 3.6: the start page (now over 50 KB) was assembled
+  completely in RAM before sending; without a large enough free memory block the result was empty.
+  The page is now sent in parts (chunked transfer) and each section is only generated right before
+  it is sent.
+
+## [3.6] – 2026-10-07
+
+### Changed
+- **New header in the web interface**:
+  - illustration of the WT32-ETH01 with live status LEDs (LAN link green, traffic blinking yellow,
+    WiFi blue)
+  - **prominent operating mode banner** with pictogram and its own colour per mode (NAT blue,
+    bridge green, access point NAT purple, access point bridge orange); a click opens the mode selection
+  - **three status tiles**: LAN port/uplink, router WiFi or WiFi devices, and the current data rate,
+    each with a coloured status dot
+- **Collapsible settings**: router WiFi, operating mode, firewall, setup WiFi and web interface
+  password are sections that can be opened and closed, each with a pictogram and a status badge
+  (e.g. firewall "on", password "set"). The browser remembers which sections are open; links such as
+  "Set a password" open the matching section.
+- Access point modes: the warning links for an open WiFi now jump to the operating mode, where name and
+  password are set.
+
 ## [3.5] – 2026-10-07
 
 ### Changed

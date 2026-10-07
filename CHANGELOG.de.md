@@ -14,6 +14,32 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.6.1] – 07.10.2026
+
+### Behoben
+- **Leere Seite im Webinterface** nach dem Update auf 3.6: Die Startseite (inzwischen über 50 KB) wurde
+  vor dem Senden komplett im RAM zusammengesetzt; fehlte dafür ein ausreichend großer freier
+  Speicherblock, blieb das Ergebnis leer. Die Seite wird jetzt in Teilen gesendet (chunked transfer),
+  jeder Abschnitt entsteht erst unmittelbar vor dem Senden.
+
+## [3.6] – 07.10.2026
+
+### Geändert
+- **Neuer Kopfbereich im Webinterface**:
+  - Abbildung des WT32-ETH01 mit Live-Status-LEDs (LAN-Verbindung grün, Datenverkehr gelb blinkend,
+    WLAN blau)
+  - **auffälliges Banner der Betriebsart** mit Piktogramm und eigener Farbe je Modus (NAT blau,
+    Bridge grün, Access Point NAT lila, Access Point Bridge orange); ein Klick öffnet die Auswahl der
+    Betriebsart
+  - **drei Statuskacheln**: LAN-Port bzw. Uplink, Router-WLAN bzw. WLAN-Geräte und aktuelle
+    Datenrate, jeweils mit farbigem Statuspunkt
+- **Aufklappbare Einstellungen**: Router-WLAN, Betriebsart, Firewall, Einrichtungs-WLAN und
+  Webinterface-Passwort sind auf- und zuklappbare Abschnitte mit Piktogramm und Status-Badge
+  (z. B. Firewall „aktiv“, Passwort „gesetzt“). Der Browser merkt sich, welche Abschnitte offen sind;
+  Links wie „Passwort festlegen“ öffnen den passenden Abschnitt.
+- Access-Point-Betriebsarten: Die Warnhinweise zum offenen WLAN springen jetzt zur Betriebsart, wo Name
+  und Passwort festgelegt werden.
+
 ## [3.5] – 07.10.2026
 
 ### Geändert
