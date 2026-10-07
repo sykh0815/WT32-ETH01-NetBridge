@@ -31,14 +31,14 @@ Access point:  [ phone, laptop ] ))) WiFi ))) [ WT32-ETH01 NetBridge ] ──cab
 ## Web interface
 
 <p align="center">
-  <img src="docs/webinterface-v2.4.png" alt="Web interface in bridge mode: language switch, open setup WiFi warning, WiFi signal, LAN device info, operating mode and setup WiFi password" width="420">
+  <img src="docs/screenshots/en/07-status-access-point.png" alt="Web interface in access point bridge mode: board with status LEDs, operating mode, status tiles, data rate chart, WiFi devices and devices in the home network" width="460">
 </p>
 
-The web interface (English, version 2.4) in bridge mode: language switch, warning while the setup
-WiFi has no password, WiFi signal strength, details of the device on the LAN port (IP address from
-the router, link speed, packet counters), router WiFi, operating mode and setup WiFi password.
-The interface is available in English and German and can be switched with the flag buttons at the
-top right.
+The web interface (version 3.6, access point bridge mode): board illustration with live status LEDs,
+the current operating mode, status tiles, data rate with a 2-minute chart, the connected WiFi devices
+with name, manufacturer, signal and lease, and the devices in the home network. The settings below
+are collapsible sections. The interface is available in English and German and can be switched with
+the flag buttons at the top right.
 
 ## Screenshots
 

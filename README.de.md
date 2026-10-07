@@ -30,13 +30,14 @@ Access Point:  [ Handy, Laptop ] ))) WLAN ))) [ WT32-ETH01 NetBridge ] ──Kab
 ## Webinterface
 
 <p align="center">
-  <img src="docs/webinterface-v2.4.png" alt="Webinterface im Bridge-Modus: Sprachumschalter, Warnung wegen offenem Einrichtungs-WLAN, WLAN-Empfang, Infos zum LAN-Gerät, Betriebsart und Passwort des Einrichtungs-WLANs" width="420">
+  <img src="docs/screenshots/de/07-status-access-point.png" alt="Webinterface im Modus Access Point als Bridge: Board mit Status-LEDs, Betriebsart, Statuskacheln, Datenraten-Diagramm, WLAN-Geräte und Geräte im Heimnetz" width="460">
 </p>
 
-Das Webinterface (hier auf Englisch, Version 2.4) im Bridge-Modus: Sprachumschalter, Warnung
-solange das Einrichtungs-WLAN kein Passwort hat, WLAN-Empfang, Daten des Geräts am LAN-Port
-(IP-Adresse vom Router, Link-Geschwindigkeit, Paketzähler), Router-WLAN, Betriebsart und Passwort
-des Einrichtungs-WLANs.
+Das Webinterface (Version 3.6, Access Point als Bridge): Abbildung des Boards mit Live-Status-LEDs,
+die aktuelle Betriebsart, Statuskacheln, Datenrate mit Verlauf der letzten 2 Minuten, die verbundenen
+WLAN-Geräte mit Name, Hersteller, Signal und Lease sowie die Geräte im Heimnetz. Die Einstellungen
+darunter sind aufklappbare Abschnitte. Das Webinterface gibt es auf Deutsch und Englisch, umschaltbar
+über die Flaggen oben rechts.
 
 ## Screenshots
 
