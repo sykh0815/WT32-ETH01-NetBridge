@@ -72,7 +72,7 @@ All screenshots with descriptions: **[screenshot album](docs/SCREENSHOTS.md)**.
 - **Emergency reset**: switching the power off and on 3 times in a row returns to NAT mode and removes
   the web interface password.
 - **Simple firewall** for the connected devices: "Internet only, no home network", block the web
-  interface, isolate WiFi devices, up to 16 custom rules with hit counters, MAC allow list in the
+  interface, isolate WiFi devices, up to 32 custom rules with hit counters, MAC allow list in the
   access point modes.
 - **Device overview**: connected devices with name (from DHCP), manufacturer (or "private MAC"),
   IP, signal, WiFi standard, connection time and remaining DHCP lease time.
@@ -238,7 +238,7 @@ needed.
 | Internet only, no home network | blocks private addresses (10.x, 172.16–31.x, 192.168.x, multicast); DHCP, DNS and ping to the router stay allowed. In the bridge modes it also blocks connections from the home network to the device. |
 | Block the bridge web interface | connected devices cannot open the settings page |
 | Isolate WiFi devices (AP modes) | WiFi devices of the bridge cannot reach each other |
-| Custom rules (up to 16) | block/allow, protocol (all/TCP/UDP/ICMP), target IP or network, port or port range; first match wins; hit counter per rule |
+| Custom rules (up to 32) | block/allow, protocol (all/TCP/UDP/ICMP), target IP or network, port or port range; first match wins; hit counter per rule |
 | Everything else | allow (default) or block |
 | MAC filter (AP modes) | only listed WiFi devices may connect; protects you from locking yourself out |
 
@@ -270,7 +270,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **3.4** – table of the devices in the home network (access point bridge).
+Current version: **3.5** – redesigned firewall section, up to 32 rules.
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 

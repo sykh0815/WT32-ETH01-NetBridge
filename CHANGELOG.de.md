@@ -14,6 +14,19 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.5] – 07.10.2026
+
+### Geändert
+- **Firewall-Bereich überarbeitet**: Jede Option ist eine Kachel mit Piktogramm und Schiebeschalter;
+  „Firewall aktiv“ ist grün hervorgehoben, die übrigen Optionen sind bei ausgeschalteter Firewall
+  abgeblendet.
+- **Bis zu 32 eigene Regeln** (vorher 16). Angezeigt werden nur die vorhandenen Regeln, weitere kommen
+  per „+ Regel hinzufügen“ dazu. Jede Regel lässt sich nach oben/unten verschieben (die Reihenfolge
+  zählt) und löschen. „Sperren“ erscheint rot, „Erlauben“ grün; ausgeschaltete Regeln sind abgeblendet.
+- „Alles andere“ und der Zähler der gesperrten Pakete haben eigene Kacheln.
+- Zugelassene WLAN-Geräte: Die MAC-Liste hat eine eigene Beschriftung mit mehr Abstand; verbundene
+  Geräte lassen sich per Antippen übernehmen.
+
 ## [3.4] – 06.10.2026
 
 ### Neu

@@ -70,7 +70,7 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
 - **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt die Betriebsart auf NAT zurück und entfernt
   das Passwort des Webinterface.
 - **Einfache Firewall** für die angeschlossenen Geräte: „Nur Internet, kein Heimnetz“, Webinterface
-  sperren, WLAN-Geräte trennen, bis zu 16 eigene Regeln mit Trefferzähler, MAC-Liste in den
+  sperren, WLAN-Geräte trennen, bis zu 32 eigene Regeln mit Trefferzähler, MAC-Liste in den
   Access-Point-Betriebsarten.
 - **Geräteübersicht**: verbundene Geräte mit Namen (aus DHCP), Hersteller (bzw. „Private MAC“),
   IP, Signal, WLAN-Standard, Verbindungsdauer und Restlaufzeit der DHCP-Vergabe.
@@ -239,7 +239,7 @@ ein Neustart ist nicht nötig.
 | Nur Internet, kein Heimnetz | sperrt private Adressen (10.x, 172.16–31.x, 192.168.x, Multicast); DHCP, DNS und Ping zum Router bleiben erlaubt. In den Bridge-Betriebsarten werden zusätzlich Verbindungen aus dem Heimnetz zum Gerät gesperrt. |
 | Webinterface der Bridge sperren | angeschlossene Geräte können die Einstellungsseite nicht öffnen |
 | WLAN-Geräte trennen (AP-Betriebsarten) | die WLAN-Geräte der Bridge erreichen sich gegenseitig nicht |
-| Eigene Regeln (bis zu 16) | sperren/erlauben, Protokoll (alle/TCP/UDP/ICMP), Ziel-IP oder -Netz, Port oder Portbereich; die erste passende Regel entscheidet; Trefferzähler je Regel |
+| Eigene Regeln (bis zu 32) | sperren/erlauben, Protokoll (alle/TCP/UDP/ICMP), Ziel-IP oder -Netz, Port oder Portbereich; die erste passende Regel entscheidet; Trefferzähler je Regel |
 | Alles andere | erlauben (Standard) oder sperren |
 | MAC-Filter (AP-Betriebsarten) | nur eingetragene WLAN-Geräte dürfen sich verbinden; schützt vor dem Selbstaussperren |
 
@@ -271,7 +271,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **3.4** – Tabelle der Geräte im Heimnetz (Access Point als Bridge).
+Aktuelle Version: **3.5** – überarbeiteter Firewall-Bereich, bis zu 32 Regeln.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

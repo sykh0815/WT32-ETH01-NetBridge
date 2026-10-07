@@ -13,6 +13,18 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.5] – 2026-10-07
+
+### Changed
+- **Redesigned firewall section**: every option is a tile with a pictogram and a toggle switch;
+  "Firewall enabled" is highlighted in green, and the other options are dimmed while the firewall is off.
+- **Up to 32 custom rules** (previously 16). Only the existing rules are shown; further rules are
+  added with "+ Add rule". Each rule can be moved up/down (the order matters) and deleted.
+  "Block" is shown in red and "Allow" in green; disabled rules are dimmed.
+- "Everything else" and the blocked packet counter are shown as separate tiles.
+- Allowed WiFi devices: the MAC list has its own label with more spacing; the connected devices
+  can be added with a tap.
+
 ## [3.4] – 2026-10-06
 
 ### Added
