@@ -62,12 +62,25 @@ fi
 (cd "$DIST" && shasum -a 256 *.bin > SHA256SUMS.txt)
 ASSETS+=("$DIST/SHA256SUMS.txt")
 
-# Release-Notizen aus beiden Changelogs / release notes from both changelogs
-section() { awk -v v="## [$1]" 'index($0,v)==1{f=1;next} /^## \[/{if(f)exit} f' "$2" | sed 's/^### /#### /'; }
+# Release-Notizen aus beiden Changelogs: alle Versionen seit dem letzten Release
+# Release notes from both changelogs: all versions since the previous release
+PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+PREV="${PREV_TAG#v}"
+[ "$PREV" = "$VERSION" ] && PREV=""
+echo "==> Notizen ab / notes since: ${PREV_TAG:-(Anfang / start)}"
+# Gibt die Abschnitte von "## [VERSION]" bis vor "## [PREV]" aus; Versionsueberschriften werden zu ###
+section() {
+  awk -v v="## [$1]" -v p="## [$3]" '
+    index($0,v)==1 {f=1}
+    f && p != "## []" && index($0,p)==1 {exit}
+    f && /^## \[/ {sub(/^## /,"### "); print; next}
+    f && /^### / {sub(/^### /,"#### "); print; next}
+    f {print}' "$2"
+}
 NOTES="$DIST/RELEASE_NOTES.md"
 {
-  echo "## English"; section "$VERSION" CHANGELOG.md
-  echo "## Deutsch"; section "$VERSION" CHANGELOG.de.md
+  echo "## English"; section "$VERSION" CHANGELOG.md "$PREV"
+  echo "## Deutsch"; section "$VERSION" CHANGELOG.de.md "$PREV"
   cat <<'EOF'
 ---
 
