@@ -102,7 +102,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.6.1";
+constexpr char FIRMWARE_VERSION[] = "3.6.2";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -2489,6 +2489,7 @@ String firewallSectionHtml() {
     for (int i = 0; i < fwMacCount; ++i) html += macToString(fwMacs[i]) + "\n";
     html += String("</textarea></label><p class='fwpick'><small>") + T("Gerade verbunden &ndash; zum &Uuml;bernehmen antippen:", "Currently connected &ndash; tap to add:") + "</small></p><div id='fwMacPick'></div>";
   }
+  html += "</div>";  // Ende .fwsub: nur die Optionen werden bei ausgeschalteter Firewall abgeblendet, nicht Zaehler und Speichern-Knopf
   html += String("<div class='fwstat'>") + fwIcon(FW_ICON_BLOCKED) + "<span>" + T("Gesperrte Pakete seit dem Start: ", "Blocked packets since start: ") + "<b id='fwBlocked'>" + String(fwBlocked) + "</b></span></div>"
     "<button type='submit'>" + T("Firewall speichern", "Save firewall") + "</button></div></form>"
     "<script>var fwN=100,fwMax=" + String(FW_MAX_RULES) + ";function fwRows(){return document.querySelectorAll('#fwRules .fwrule');}"

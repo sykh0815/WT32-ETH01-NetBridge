@@ -272,7 +272,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **3.6.1** – neuer Kopfbereich mit Board, Betriebsart und Statuskacheln; aufklappbare Einstellungen.
+Aktuelle Version: **3.6.2** – neuer Kopfbereich mit Board, Betriebsart und Statuskacheln; aufklappbare Einstellungen.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

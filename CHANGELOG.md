@@ -13,6 +13,13 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.6.2] – 2026-10-08
+
+### Fixed
+- Firewall: when switching the firewall off, the whole section including the blocked packet counter
+  and the "Save firewall" button was dimmed (an HTML element was not closed). Now only the options
+  are dimmed; counter and button stay normal.
+
 ## [3.6.1] – 2026-10-07
 
 ### Fixed

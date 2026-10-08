@@ -270,7 +270,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **3.6.1** – new header with board, operating mode and status tiles; collapsible settings.
+Current version: **3.6.2** – new header with board, operating mode and status tiles; collapsible settings.
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 

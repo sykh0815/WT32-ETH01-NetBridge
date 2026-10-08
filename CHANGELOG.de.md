@@ -14,6 +14,13 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.6.2] – 08.10.2026
+
+### Behoben
+- Firewall: Beim Ausschalten der Firewall wurde der ganze Bereich abgeblendet, auch der Zähler der
+  gesperrten Pakete und der Knopf „Firewall speichern“ (ein HTML-Element war nicht geschlossen).
+  Jetzt werden nur die Optionen abgeblendet; Zähler und Knopf bleiben normal.
+
 ## [3.6.1] – 07.10.2026
 
 ### Behoben
