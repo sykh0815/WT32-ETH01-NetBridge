@@ -2,13 +2,13 @@
 
 🇬🇧 [English](README.md) | 🇩🇪 **Deutsch**
 
-[![Version](https://img.shields.io/badge/Version-3.0-1263a6)](CHANGELOG.de.md)
+[![Version](https://img.shields.io/badge/Version-3.14-1263a6)](CHANGELOG.de.md)
 [![Plattform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#bauen-und-flashen)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 3.0** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
+**Version 3.14** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
 
 **WT32-ETH01 NetBridge** ist eine Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die Ethernet und
 WLAN in beide Richtungen verbindet:
@@ -17,6 +17,8 @@ WLAN in beide Richtungen verbindet:
   WLAN**, z. B. Drucker, Smart-TV, Spielkonsole, NAS, SPS oder Messgeräte.
 - **Access Point:** per Kabel am Router, spannt die NetBridge ein **eigenes WLAN** auf – als kleiner
   Access Point, Gäste-WLAN oder WLAN-Erweiterung, auf Wunsch mit Firewall.
+- **Optionales Display:** OLED oder Farb-TFT mit Adresse, Datenrate, Geräten, CPU/RAM, WLAN-QR-Code
+  für Gäste und Uhrzeit.
 
 <p align="center">
   <img src="docs/wt32-eth01-netbridge-banner.png" alt="WT32-ETH01 NetBridge – Ethernet ⇄ WLAN für den WT32-ETH01: WLAN-Client oder Access Point, NAT oder Bridge, Firewall" width="760">
@@ -33,7 +35,7 @@ Access Point:  [ Handy, Laptop ] ))) WLAN ))) [ WT32-ETH01 NetBridge ] ──Kab
   <img src="docs/screenshots/de/07-status-access-point.png" alt="Webinterface im Modus Access Point als Bridge: Board mit Status-LEDs, Betriebsart, Statuskacheln, Datenraten-Diagramm, WLAN-Geräte und Geräte im Heimnetz" width="460">
 </p>
 
-Das Webinterface (Version 3.6, Access Point als Bridge): Abbildung des Boards mit Live-Status-LEDs,
+Das Webinterface (Version 3.14, Access Point als Bridge): Abbildung des Boards mit Live-Status-LEDs,
 die aktuelle Betriebsart, Statuskacheln, Datenrate mit Verlauf der letzten 2 Minuten, die verbundenen
 WLAN-Geräte mit Name, Hersteller, Signal und Lease sowie die Geräte im Heimnetz. Die Einstellungen
 darunter sind aufklappbare Abschnitte. Das Webinterface gibt es auf Deutsch und Englisch, umschaltbar
@@ -46,45 +48,56 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
 <table>
 <tr><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/01-status-nat.png' width='240' alt='Status im NAT-Modus'></a><br><sub>Status im NAT-Modus</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/04-operating-modes.png' width='240' alt='Betriebsarten'></a><br><sub>Betriebsarten</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/06-firewall.png' width='240' alt='Firewall'></a><br><sub>Firewall</sub></td></tr>
 <tr><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/05-access-point-setup.png' width='240' alt='Access Point einrichten'></a><br><sub>Access Point einrichten</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/07-status-access-point.png' width='240' alt='Status im Access-Point-Modus'></a><br><sub>Status im Access-Point-Modus</sub></td><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/08-open-wifi.png' width='240' alt='Bewusst offenes WLAN'></a><br><sub>Bewusst offenes WLAN</sub></td></tr>
+<tr><td align='center' width='33%'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/12-display.png' width='240' alt='Display-Einstellungen'></a><br><sub>Display-Einstellungen mit Live-Vorschau</sub></td><td align='center' colspan='2'><a href='docs/SCREENSHOTS.de.md'><img src='docs/screenshots/de/13-display-pages.png' width='480' alt='Display-Seiten'></a><br><sub>Display-Seiten (TFT und OLED)</sub></td></tr>
 </table>
 
 ## Funktionen
 
-- **Vier Betriebsarten**, umschaltbar im Webinterface:
-  - **NAT – eigenes Netzwerk** (Standard): eigenes Netz `192.168.50.0/24` am LAN-Port mit
-    DHCP-Server, Internetfreigabe über NAPT. Mehrere Geräte möglich (z. B. über einen Switch).
-    Datenrate bis ca. 10 Mbit/s.
-  - **Bridge – direkt ins Heimnetz** (experimentell): Das LAN-Gerät bekommt seine IP **direkt vom
-    Router**. Nur ein Gerät, nur IPv4. Datenrate über 30 Mbit/s (Details siehe unten).
-  - **Access Point – eigenes WLAN-Netz (NAT)**: Der LAN-Port geht zum Router, die Bridge spannt ein
-    eigenes WLAN (`192.168.4.x`) für bis zu ca. 8 Geräte auf. Das Webinterface bleibt erreichbar.
-  - **Access Point – WLAN direkt im Heimnetz (Bridge)**: WLAN-Geräte bekommen ihre IP direkt vom
-    Router. Das Webinterface ist dann über die IP erreichbar, die der Router der Bridge gibt
-    (z. B. `http://wt32-eth01-netbridge.fritz.box`).
-- **Geräte im Heimnetz** (Access Point als Bridge): Tabelle mit IP, Name, Hersteller, MAC und
-  „zuletzt gesehen“ der Geräte im Heimnetz, passiv erkannt an ihren Rundsendungen.
-- **Live-Datenrate am LAN-Port**: aktueller Download/Upload, Verlauf der letzten 2 Minuten,
-  Höchstwerte und Datenmenge seit dem Start.
-- **Passwortschutz für das Webinterface** (optional): Anmeldeseite, Sitzungs-Cookie, gespeichert wird nur
-  ein gesalzener Hash des Passworts. Empfohlen in den Access-Point-Betriebsarten, weil das Webinterface
-  dort auch aus dem Heimnetz erreichbar ist.
-- **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt die Betriebsart auf NAT zurück und entfernt
-  das Passwort des Webinterface.
-- **Einfache Firewall** für die angeschlossenen Geräte: „Nur Internet, kein Heimnetz“, Webinterface
-  sperren, WLAN-Geräte trennen, bis zu 32 eigene Regeln mit Trefferzähler, MAC-Liste in den
-  Access-Point-Betriebsarten.
-- **Geräteübersicht**: verbundene Geräte mit Namen (aus DHCP), Hersteller (bzw. „Private MAC“),
-  IP, Signal, WLAN-Standard, Verbindungsdauer und Restlaufzeit der DHCP-Vergabe.
-- **Captive Portal**: Nach dem Verbinden mit dem Einrichtungs-WLAN öffnet sich die Einrichtungsseite
-  automatisch.
-- **Webinterface** auf **Deutsch und Englisch** (umschaltbar per Flaggen-Button) über ein eigenes
-  Einrichtungs-WLAN (Passwort im Webinterface änderbar):
-  - WLAN-Suche und Eingabe der Router-Zugangsdaten
-  - Anzeige der WLAN-Signalstärke
-  - Infos zum Gerät am LAN-Port: IP-Adresse, MAC-Adresse, Link-Geschwindigkeit/Duplex,
-    Verbindungsdauer, im Bridge-Modus zusätzlich Paketzähler
-- Zugangsdaten und Betriebsart werden dauerhaft im Flash (NVS) gespeichert.
-- Keine externen Bibliotheken nötig.
+**Betriebsarten** (umschaltbar im Webinterface)
+
+- **NAT – eigenes Netzwerk** (Standard): eigenes Netz `192.168.50.0/24` am LAN-Port mit DHCP-Server,
+  Internetfreigabe über NAPT. Mehrere Geräte möglich (z. B. über einen Switch). Bis ca. 10 Mbit/s.
+- **Bridge – direkt ins Heimnetz** (experimentell): Das LAN-Gerät bekommt seine IP-Adresse **direkt vom
+  Router**. Nur ein Gerät, nur IPv4. Über 30 Mbit/s.
+- **Access Point – eigenes WLAN-Netz (NAT)**: LAN-Port am Router, die Bridge spannt ein eigenes WLAN
+  (`192.168.4.x`) für bis zu ca. 8 Geräte auf. Das Webinterface bleibt erreichbar.
+- **Access Point – WLAN direkt im Heimnetz (Bridge)**: WLAN-Geräte bekommen ihre IP direkt vom Router;
+  das Webinterface ist über die IP der Bridge erreichbar (z. B. `http://wt32-eth01-netbridge.fritz.box`).
+
+**Webinterface** (Deutsch und Englisch, umschaltbar per Flaggen-Button)
+
+- Kopfbereich mit Board-Abbildung und Live-Status-LEDs, farbigem **Banner der Betriebsart** und
+  Statuskacheln (LAN, WLAN, Datenrate); Einstellungen als aufklappbare Abschnitte mit Status-Badges
+- **Live-Datenrate** am LAN-Port mit Verlauf der letzten 2 Minuten, Höchstwerten und Datenmenge
+- **Geräteübersicht**: WLAN-Geräte und LAN-Gerät mit Name (aus DHCP), Hersteller (bzw. „Private MAC“),
+  IP, Signal, WLAN-Standard, Verbindungsdauer und Restlaufzeit der DHCP-Vergabe
+- **Geräte im Heimnetz** (Access Point als Bridge): IP, Name, Hersteller, MAC und „zuletzt gesehen“,
+  passiv erkannt an ihren Rundsendungen
+- WLAN-Suche, Router-Zugangsdaten, Passwort des Einrichtungs-WLANs, Captive Portal im Einrichtungs-WLAN
+
+**Sicherheit**
+
+- **Firewall** für die angeschlossenen Geräte: „Nur Internet, kein Heimnetz“, Webinterface sperren,
+  WLAN-Geräte trennen, bis zu **32 eigene Regeln** (hinzufügen, verschieben, löschen) mit Trefferzähler,
+  MAC-Liste
+- **Passwortschutz für das Webinterface** (optional, gesalzener Hash, Sitzungs-Cookie, Sperre nach
+  Fehlversuchen)
+- **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt auf NAT zurück und entfernt das
+  Webinterface-Passwort
+
+**Optionales Display** (OLED SSD1306/SSD1315 per I²C oder Farb-TFT ST7735 per SPI)
+
+- Seiten: Adresse des Webinterface, Datenrate mit Verlauf, WLAN, **System** (CPU, RAM), **Heute**
+  (Datenmenge, Spitzenwerte) und ein **WLAN-QR-Code** für Gäste; im Wechsel oder eine feste Seite
+- **Ereignis-Hinweise** (neues Gerät, Kabel, Router-WLAN), **Uhrzeit** per NTP, **Nachtmodus**,
+  Helligkeitsregler, Einbrennschutz, optionaler **Taster** an IO36
+- **Live-Vorschau** des Displays im Webinterface
+
+**Diagnose**
+
+- **Serielle Konsole** mit Befehlen: Systemstatus mit **CPU-Last je Kern**, RAM, Firmware-Größe, Grund
+  des letzten Starts (inkl. Brownout), optionale **Messung der 5-V-Versorgung**, Task-Liste
+- Einstellungen dauerhaft im Flash (NVS); keine externen Bibliotheken nötig
 
 ## Hardware
 
@@ -123,6 +136,63 @@ Zum Flashen dienen die Programmier-Pins **TXD0 (IO1), RXD0 (IO3), GND, 3V3, EN u
 
 Verwendete Pins intern: GPIO16 (Oszillator-Enable LAN8720), GPIO23 (MDC), GPIO18 (MDIO),
 GPIO0 (50-MHz-RMII-Takt-Eingang), PHY-Adresse 1.
+
+### Optional: Display
+
+Der Displaytyp wird im Webinterface unter „Display“ gewählt (nach einer Änderung startet die Bridge neu).
+
+**OLED 128×64, SSD1306 oder SSD1315** (4-poliges I²C-Modul, Standard). Es wird beim Start automatisch
+erkannt; ohne Display ändert sich nichts.
+
+| Display | WT32-ETH01 |
+|---------|------------|
+| GND | GND |
+| VCC | 3V3 |
+| SCL | CFG (GPIO32) |
+| SDA | 485_EN (GPIO33) |
+
+Das Display wechselt (alle 3–30 Sekunden, einstellbar) zwischen der Adresse des Webinterface, der Datenrate am LAN-Port
+(mit Verlauf der letzten Minute) dem WLAN-Status (Signal bzw. verbundene Geräte) und dem
+System (CPU-Last je Kern, RAM, Laufzeit, Versorgungsspannung falls gemessen); stimmt etwas
+nicht (kein Kabel, Router-WLAN getrennt, keine IP), kommt eine Hinweisseite dazu. Alternativ lässt sich eine
+Seite fest anzeigen (Einstellung „Seite“); ein Hinweis erscheint dann trotzdem im Wechsel. Ereignisse
+(neues WLAN-Gerät, Kabel gesteckt/gezogen, Router-WLAN) werden 4 Sekunden eingeblendet, und das
+Webinterface zeigt eine **Live-Vorschau** des Displays.
+
+Weitere Display-Funktionen (Webinterface → Display):
+
+- **WLAN-QR-Code**: Gäste scannen ihn mit der Handykamera und sind verbunden (optionale Seite; jeder, der
+  das Display sieht, kann sich verbinden).
+- **Heute**: Datenmenge Download/Upload, Spitzenwerte und max. WLAN-Geräte seit Mitternacht (bzw. seit
+  dem Start).
+- **Uhrzeit** in der Kopfzeile (per Internet/NTP, Zeitzone wählbar).
+- **Nachtmodus** (abschaltbar): Display zwischen zwei Uhrzeiten aus oder dunkel, z. B. 22:00–07:00.
+- **Taster** (optional): zwischen **IO36** und **GND**, dazu 10 kΩ von IO36 nach 3V3. Kurz drücken:
+  nächste Seite für 30 s und Nachtmodus kurz aufheben; lang (1 s): Display an/aus. Einbrennschutz:
+Der Inhalt verschiebt sich jede Minute um wenige Pixel, und nach 1 Minute wird das Display abgedunkelt
+(bei Ereignissen und beim Öffnen des Webinterface wird es wieder hell). An/aus, Abdunkeln und Drehen um
+180° lassen sich im Webinterface unter „Display“ einstellen. GPIO2, 12 und 15 nicht fürs Display
+verwenden – das sind Boot-Pins.
+
+**Farb-TFT mit ST7735** – 1,8″ 160×128, 1,44″ 128×128 oder 0,96″ 160×80. Das ST7735 hat **kein I²C**:
+Die mit SCL/SDA beschrifteten Anschlüsse dieser Module sind SPI-Takt und -Daten.
+
+| TFT-Modul | WT32-ETH01 |
+|-----------|------------|
+| GND / VCC | GND / 3V3 |
+| BL (LED) | frei lassen (Licht an), oder TXD (GPIO17) für echtes Dimmen |
+| SCL (SCK) | CFG (GPIO32) |
+| SDA (MOSI) | 485_EN (GPIO33) |
+| DC (A0) | IO4 |
+| CS | IO14 |
+| RES (RST) | RXD (GPIO5) |
+
+Das TFT zeigt dieselben Seiten in Farbe (Kopfzeile in der Farbe der Betriebsart, Download blau, Upload
+orange, Warnungen rot); 160×128 und 128×128 nutzen ein größeres Layout. Ist das Bild verschoben oder
+stimmen die Farben nicht, helfen Versatz X/Y, „Rot und Blau vertauschen“ bzw. „Farben invertieren“ im
+Webinterface (Voreinstellungen je Modulgröße werden automatisch eingetragen). Ist BL frei (die meisten Module schalten das
+Licht dann selbst ein), regelt der Helligkeitsregler über dunklere Farben; mit BL an TXD (GPIO17) und eingeschaltetem
+„Hintergrundlicht an TXD“ regelt er die Beleuchtung selbst (PWM).
 
 ## Bauen und Flashen
 
@@ -254,6 +324,9 @@ IP-Adressen, keine Domainnamen.
 platformio.ini            Build-Konfiguration
 src/main.cpp              Firmware
 src/oui_table.h           Herstellertabelle (MAC-Präfixe), erzeugt von tools/gen_oui.py
+src/display.h             Treiber für die optionalen OLED- und TFT-Displays
+src/qr.h                  kleiner QR-Code-Generator (WLAN-QR-Code auf dem Display)
+src/oled_font.h           Schrift fürs Display, erzeugt von tools/gen_font.py
 docs/TUTORIAL.de.md       Tutorial: Kompilieren und Flashen (Deutsch)
 docs/TUTORIAL.en.md       Tutorial: build and flash (English)
 docs/webinterface-v2.4.png Screenshot des Webinterface (echtes Gerät)
@@ -267,12 +340,13 @@ CHANGELOG.md              changelog (English)
 LICENSE                   MIT-Lizenz
 tools/release.sh          baut die Firmware und legt einen GitHub-Release an
 tools/gen_oui.py          erzeugt src/oui_table.h neu aus der IEEE-OUI-Liste
+tools/gen_font.py         erzeugt src/oled_font.h neu (Schrift fürs Display)
 backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 ```
 
 ## Versionen
 
-Aktuelle Version: **3.6.2** – neuer Kopfbereich mit Board, Betriebsart und Statuskacheln; aufklappbare Einstellungen.
+Aktuelle Version: **3.14** – Display: WLAN-QR-Code, Tagesstatistik, Uhrzeit, Nachtmodus, Taster.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 
@@ -281,6 +355,40 @@ Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 Wenn dir das Projekt hilft, freue ich mich über einen Kaffee:
 
 <a href="https://buymeacoffee.com/sykh"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
+
+## Serielle Konsole und Systemstatus
+
+Im seriellen Monitor (`pio device monitor`, 115200 Baud) gibt die Bridge alle 10 Sekunden eine
+Statuszeile aus (Betriebsart, WLAN, **CPU-Last je Kern**, freier RAM) und 15 Sekunden nach dem Start
+einmal den kompletten Systemstatus. Befehle (eintippen und Enter drücken). Die Firmware bestätigt jeden erkannten Befehl mit
+einer Zeile `> befehl`; erscheint sie nicht, kommt die Eingabe nicht beim ESP32 an (Leitung Adapter
+TX → RX0/IO3 prüfen). In der Arduino-IDE das Eingabefeld oben verwenden:
+
+| Befehl | Funktion |
+|--------|----------|
+| `status` oder `s` | Systemstatus: Laufzeit, Grund des letzten Starts (inkl. Brownout), Chip, Flash, Firmware-Größe, CPU-Last je Kern mit den aktivsten Tasks, RAM, Einstellungsspeicher, Versorgungsspannung, LAN/WLAN, Adresse des Webinterface, Display |
+| `tasks` oder `t` | alle Tasks mit Kern, CPU-Anteil und freiem Stack |
+| `vmon on` / `vmon off` | 5-V-Versorgung messen (braucht einen Spannungsteiler, siehe unten) |
+| `vmon cal 5.02` | mit der per Multimeter gemessenen Spannung kalibrieren |
+| `diag off` / `diag on` / `diag 60` | Statuszeile aus, an (alle 10 s) oder alle 60 s |
+| `reboot` | Neustart |
+
+**Versorgungsspannung:** Der ESP32 kann seine eigene Versorgungsspannung nicht messen. Für eine Messung
+einen Spannungsteiler aus zwei gleichen Widerständen (z. B. 2 × 10 kΩ) von **5V nach GND** schalten und
+die Mitte an **IO39** anschließen (nur Eingang, frei). Danach einmal `vmon on` eingeben. Unter 4,6 V
+zeigt der Status eine Warnung. Am Grund des letzten Starts erkennst du, ob die Bridge wegen Unterspannung
+(Brownout) neu gestartet ist.
+
+```
+═══ WT32-ETH01 NetBridge 3.9 · Systemstatus ═══
+ CPU
+   Kern 0 ........... [██░░░░░░░░░░░░░░░░░░]  10 %
+   Kern 1 ........... [█░░░░░░░░░░░░░░░░░░░]   4 %
+   Top-Tasks ........ wifi 3.0 %, eth2ap 2.2 %, loopTask 1.2 %, tiT 0.8 %
+ Versorgung
+   5V-Eingang ....... 5.02 V   ok
+   Brownout ......... nein
+```
 
 ## Fehlersuche
 

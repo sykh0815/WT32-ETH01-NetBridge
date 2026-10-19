@@ -13,6 +13,144 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.14] – 2026-10-19
+
+### Added
+- Display page **WiFi QR code** (optional in the rotation or permanently): phones join the WiFi of the
+  bridge by scanning it (access point modes: own WiFi, client modes: setup WiFi). Own small QR
+  generator (byte mode, version 1–6, ported from Project Nayuki's library, MIT), checked against the
+  reference implementation and a QR reader.
+- Display page **Today**: data volume down/up, peak rates and maximum number of WiFi devices since
+  midnight (or since start until the time is known).
+- **Clock** via the internet (NTP) with selectable time zone, shown in the display header.
+- **Night mode** (can be switched off): display off or dimmed between two times.
+- **Optional button on IO36** (to GND, 10 kΩ pull-up to 3V3): short press shows the next page for
+  30 s and lifts night mode briefly, long press (1 s) switches the display on/off.
+- Web interface "Display": new groups "Time & night mode" and "Button", page options "Today only" and
+  "WiFi QR code only", switch "WiFi QR code in rotation".
+
+### Changed
+- **Larger app partition** (`min_spiffs.csv`: 2 × 1.9 MB instead of 2 × 1.25 MB) – the firmware had
+  grown beyond 1.25 MB. The settings (NVS) stay at the same place and are kept. Flash once via USB
+  (`pio run -t upload` or the full image from the release), because the partition table changes.
+
+## [3.13] – 2026-10-19
+
+### Added
+- **Live preview of the display** in the web interface: the current display content (OLED or TFT, in
+  colour) is shown in a small "display bezel" and updated every 2 s (only while the section is open).
+- **Event notices on the display** (4 s, can be switched off): new WiFi device (with name), device left,
+  cable plugged/unplugged, router WiFi connected/disconnected.
+
+### Changed
+- **Redesigned display section**: status with type and connection at the top, settings in two groups
+  ("Hardware" and "Display content"), wiring plan folded away, compact switches instead of large tiles,
+  offset X/Y in one row, page and interval side by side.
+
+## [3.12] – 2026-10-19
+
+### Added
+- Display page **"System"**: CPU load per core and RAM usage as coloured bars (green, from 60 % orange,
+  from 85 % red), free RAM, uptime and – if measured – the supply voltage (on the large TFT layout also
+  chip and clock). Part of the automatic rotation, or shown permanently with "System only (CPU, RAM)".
+
+## [3.11.2] – 2026-10-19
+
+### Fixed
+- Serial console: typed text was not visible because the monitor's exception decoder filter only shows
+  complete lines. The monitor echoes the input again (`monitor_echo`), and the firmware confirms every
+  recognized command with a line `> command`.
+
+## [3.11.1] – 2026-10-19
+
+### Fixed
+- Serial console: the firmware now echoes every received character itself (instead of the local echo
+  of the monitor). This shows whether input really reaches the ESP32. A command is also executed after
+  2 s without a line ending (monitors that send no Enter).
+
+## [3.11] – 2026-10-19
+
+### Added
+- Display setting **"Show"**: rotate pages automatically or show one page permanently (web interface
+  address, data rate or WiFi). With a fixed page a notice (e.g. no cable) still appears in alternation;
+  the page dots in the header are hidden.
+- Display setting **"Change every"**: 3, 5, 10, 20 or 30 seconds per page.
+
+## [3.10.1] – 2026-10-19
+
+### Fixed
+- Serial console: typed commands were not visible and were interrupted by the status line.
+  `platformio.ini` now enables `monitor_echo` (and LF line endings), the status line pauses while a
+  command is being typed, and backspace works.
+
+### Added
+- `diag off|on|<seconds>`: switch the status line off or change its interval (saved).
+- Hint at start: "'help' + Enter shows the commands".
+
+## [3.10] – 2026-10-19
+
+### Added
+- **Brightness slider** for the display in the web interface (10–100 %). Changes are shown live while
+  sliding and saved when the slider is released; "dim after 1 minute" uses a quarter of the set
+  brightness.
+  - OLED: via the contrast (pixel current) of the SSD1306/SSD1315
+  - TFT: real PWM dimming if the module's BL pin is wired to TXD (GPIO17) and "Backlight on TXD" is
+    enabled; otherwise via darker colours
+
+## [3.9] – 2026-10-19
+
+### Added
+- **System status in the serial console**: command `status` (or `s`) prints uptime, reason of the last
+  start (incl. brownout), chip, flash, firmware size, **CPU load per core** (bar chart, measured via the
+  FreeRTOS run-time statistics) with the busiest tasks, RAM, settings memory, supply voltage, LAN/WiFi,
+  web interface address and display. Printed automatically once 15 s after start.
+- `tasks` (or `t`): all tasks with core, CPU share and free stack.
+- **Optional measurement of the 5 V supply** via a voltage divider (2 × 10 kΩ) on IO39: `vmon on|off`,
+  calibration with `vmon cal <volts>`; warning below 4.6 V.
+- The status line every 10 s now also shows the CPU load per core (and the supply voltage, if measured).
+- Warning at start when the last restart was caused by undervoltage (brownout).
+
+## [3.8.1] – 2026-10-19
+
+### Fixed
+- TFT stayed **white after "rotate by 180°"** (and other TFT settings) until a power cycle. Rotation,
+  offset and colours are now applied immediately without a restart (the display is re-initialized,
+  including a hardware reset); only a change of the display type restarts the bridge.
+- TFT/OLED could **freeze** on one page after interference on the wires: orientation, colour format
+  and addressing are now sent again with every frame, and the TFT gets sleep-out/display-on every
+  30 s. A black frame is written before the TFT is switched on.
+- TFT SPI clock lowered from 16 to 8 MHz (more reliable with jumper wires).
+
+## [3.8] – 2026-10-19
+
+### Added
+- **Colour TFT displays with ST7735** (SPI): 1.8″ 160×128, 1.44″ 128×128 and 0.96″ 160×80.
+  Wiring: SCL/SCK = GPIO32, SDA/MOSI = GPIO33, DC = IO4, CS = IO14, RES = GPIO5, BL to 3V3.
+  The same pages in colour (header in the colour of the operating mode, download blue, upload orange,
+  warnings red); larger layout with bigger values and a full-width chart on 160×128 and 128×128.
+  Frame buffer with a 16-colour palette (at most 10 KB RAM, only when a TFT is selected).
+- Web interface "Display": **display type selection** (OLED, three TFT sizes, none) with the wiring for
+  the selected type; for TFTs offset X/Y, swap red/blue and invert colours, with presets per size.
+
+### Changed
+- Display driver moved to `src/display.h` (common drawing code for OLED and TFT).
+
+## [3.7] – 2026-10-19
+
+### Added
+- **Optional OLED display** (128×64, SSD1306 or SSD1315, I²C on SDA = GPIO33 "485_EN",
+  SCL = GPIO32 "CFG", VCC 3V3). Detected automatically at start; own small driver and font,
+  no external library (about 8 KB).
+  - pages every 5 s: web interface address, data rate on the LAN port (large, with a chart), WiFi
+    (signal in the client modes, number and names of the devices in the access point modes); an
+    additional notice page when something is wrong
+  - start screen with firmware version; display language follows the web interface
+  - burn-in protection: content shifts by a few pixels every minute, dims after 1 minute and gets
+    bright again on events (cable, WiFi, new devices) and when the web interface is opened
+- Web interface section **"Display"**: detection status with wiring hint, on/off, dimming,
+  rotate by 180°.
+- `tools/gen_font.py` generates the display font (based on LCD_FONT from luma.core, MIT).
+
 ## [3.6.2] – 2026-10-08
 
 ### Fixed

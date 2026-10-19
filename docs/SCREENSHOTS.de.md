@@ -2,7 +2,7 @@
 
 🇬🇧 [English](SCREENSHOTS.md) | 🇩🇪 **Deutsch**
 
-Webinterface der Firmware 3.6 (WT32-ETH01 NetBridge). Die Seiten wurden von der Firmware selbst erzeugt und in Chromium dargestellt; die Live-Werte (Signal, Geräte, Datenrate, Zähler) sind Beispieldaten.
+Webinterface der Firmware 3.14 (WT32-ETH01 NetBridge). Die Seiten wurden von der Firmware selbst erzeugt und in Chromium dargestellt; die Live-Werte (Signal, Geräte, Datenrate, Zähler) sind Beispieldaten.
 
 Zurück zur [Projektbeschreibung](../README.de.md).
 
@@ -71,3 +71,15 @@ Anmeldeseite, wenn ein Passwort für das Webinterface gesetzt ist.
 Passwortschutz festlegen, ändern oder entfernen; Abmelden.
 
 <img src='screenshots/de/11-web-password.png' alt='Passwort für das Webinterface' width='560'>
+
+## 12. Display-Einstellungen
+
+Live-Vorschau des Displays, Displaytyp und Anschluss, Seiten, Helligkeit, Ereignisse, WLAN-QR-Code, Uhrzeit & Nachtmodus, Taster.
+
+<img src='screenshots/de/12-display.png' alt='Display-Einstellungen' width='560'>
+
+## 13. Display-Seiten
+
+Die Seiten auf einem Farb-TFT (160×128) und einem OLED (128×64): Adresse des Webinterface, Datenrate, WLAN-Geräte, System, Heute und WLAN-QR-Code (simuliert mit dem Zeichen-Code der Firmware).
+
+<img src='screenshots/de/13-display-pages.png' alt='Display-Seiten' width='760'>

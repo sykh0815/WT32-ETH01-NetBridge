@@ -14,6 +14,148 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.14] – 19.10.2026
+
+### Neu
+- Display-Seite **WLAN-QR-Code** (wahlweise im Wechsel oder fest): Handys verbinden sich per Scan mit
+  dem WLAN der Bridge (Access-Point-Modi: eigenes WLAN, Client-Modi: Setup-WLAN). Eigener kleiner
+  QR-Generator (Byte-Modus, Version 1–6, portiert nach der Bibliothek von Project Nayuki, MIT), gegen die
+  Referenz-Implementierung und einen QR-Leser geprüft.
+- Display-Seite **Heute**: Datenmenge Download/Upload, Spitzenwerte und maximale Zahl der WLAN-Geräte
+  seit Mitternacht (bzw. seit dem Start, bis die Uhrzeit bekannt ist).
+- **Uhrzeit** per Internet (NTP) mit wählbarer Zeitzone, angezeigt in der Kopfzeile des Displays.
+- **Nachtmodus** (abschaltbar): Display zwischen zwei Uhrzeiten aus oder dunkel.
+- **Optionaler Taster an IO36** (gegen GND, 10 kΩ Pull-up nach 3V3): kurz drücken zeigt 30 s lang die
+  nächste Seite und hebt den Nachtmodus kurz auf, lang (1 s) schaltet das Display an/aus.
+- Webinterface „Display“: neue Gruppen „Uhrzeit & Nachtmodus“ und „Taster“, Seiten „Nur Heute“ und
+  „Nur WLAN-QR-Code“, Schalter „WLAN-QR-Code im Wechsel“.
+
+### Geändert
+- **Größere App-Partition** (`min_spiffs.csv`: 2 × 1,9 MB statt 2 × 1,25 MB) – die Firmware war über
+  1,25 MB gewachsen. Die Einstellungen (NVS) liegen an derselben Stelle und bleiben erhalten. Einmal per
+  USB flashen (`pio run -t upload` oder die Komplett-Datei aus dem Release), weil sich die
+  Partitionstabelle ändert.
+
+## [3.13] – 19.10.2026
+
+### Neu
+- **Live-Vorschau des Displays** im Webinterface: Der aktuelle Displayinhalt (OLED oder TFT, in Farbe)
+  erscheint in einem kleinen „Displayrahmen“ und wird alle 2 s aktualisiert (nur bei geöffnetem Abschnitt).
+- **Ereignis-Hinweise auf dem Display** (4 s, abschaltbar): neues WLAN-Gerät (mit Name), Gerät getrennt,
+  Kabel gesteckt/gezogen, Router-WLAN verbunden/getrennt.
+
+### Geändert
+- **Display-Abschnitt neu gestaltet**: oben Zustand mit Typ und Anschluss, Einstellungen in zwei Gruppen
+  („Hardware“ und „Anzeige“), Anschlussplan eingeklappt, kompakte Schalter statt großer Kacheln,
+  Versatz X/Y in einer Zeile, Seite und Wechselzeit nebeneinander.
+
+## [3.12] – 19.10.2026
+
+### Neu
+- Display-Seite **„System“**: CPU-Last je Kern und RAM-Auslastung als farbige Balken (grün, ab 60 %
+  orange, ab 85 % rot), freier RAM, Laufzeit und – falls gemessen – die Versorgungsspannung (im großen
+  TFT-Layout zusätzlich Chip und Takt). Läuft im automatischen Wechsel mit oder fest über „Nur System
+  (CPU, RAM)“.
+
+## [3.11.2] – 19.10.2026
+
+### Behoben
+- Serielle Konsole: Die Eingabe war nicht zu sehen, weil der Filter für Absturzmeldungen im Monitor nur
+  vollständige Zeilen anzeigt. Der Monitor zeigt die Eingabe wieder selbst an (`monitor_echo`), und die
+  Firmware bestätigt jeden erkannten Befehl mit einer Zeile `> befehl`.
+
+## [3.11.1] – 19.10.2026
+
+### Behoben
+- Serielle Konsole: Die Firmware zeigt jedes empfangene Zeichen jetzt selbst an (statt des lokalen
+  Echos des Monitors). So ist sichtbar, ob die Eingabe wirklich beim ESP32 ankommt. Ein Befehl wird
+  außerdem nach 2 s ohne Zeilenende ausgeführt (Monitore, die kein Enter senden).
+
+## [3.11] – 19.10.2026
+
+### Neu
+- Display-Einstellung **„Anzeige“**: Seiten automatisch wechseln oder eine Seite fest anzeigen
+  (Webinterface-Adresse, Datenrate oder WLAN). Bei fester Seite erscheint ein Hinweis (z. B. kein Kabel)
+  trotzdem im Wechsel; die Seitenpunkte in der Kopfzeile entfallen.
+- Display-Einstellung **„Wechsel alle“**: 3, 5, 10, 20 oder 30 Sekunden pro Seite.
+
+## [3.10.1] – 19.10.2026
+
+### Behoben
+- Serielle Konsole: Eingetippte Befehle waren nicht zu sehen und wurden von der Statuszeile
+  unterbrochen. `platformio.ini` schaltet jetzt `monitor_echo` (und LF als Zeilenende) ein, die
+  Statuszeile pausiert, während ein Befehl getippt wird, und die Rücktaste funktioniert.
+
+### Neu
+- `diag off|on|<Sekunden>`: Statuszeile ausschalten oder Abstand ändern (wird gespeichert).
+- Hinweis beim Start: „'help' + Enter zeigt die Befehle“.
+
+## [3.10] – 19.10.2026
+
+### Neu
+- **Helligkeitsregler** fürs Display im Webinterface (10–100 %). Änderungen sind beim Verschieben sofort
+  zu sehen und werden beim Loslassen gespeichert; „Abdunkeln nach 1 Minute“ nutzt ein Viertel der
+  eingestellten Helligkeit.
+  - OLED: über den Kontrast (Pixelstrom) des SSD1306/SSD1315
+  - TFT: echtes Dimmen per PWM, wenn BL des Moduls an TXD (GPIO17) hängt und „Hintergrundlicht an TXD“
+    eingeschaltet ist; sonst über dunklere Farben
+
+## [3.9] – 19.10.2026
+
+### Neu
+- **Systemstatus in der seriellen Konsole**: Befehl `status` (oder `s`) zeigt Laufzeit, Grund des letzten
+  Starts (inkl. Brownout), Chip, Flash, Firmware-Größe, **CPU-Last je Kern** (Balken, gemessen über die
+  FreeRTOS-Laufzeitstatistik) mit den aktivsten Tasks, RAM, Einstellungsspeicher, Versorgungsspannung,
+  LAN/WLAN, Adresse des Webinterface und Display. Wird 15 s nach dem Start einmal automatisch ausgegeben.
+- `tasks` (oder `t`): alle Tasks mit Kern, CPU-Anteil und freiem Stack.
+- **Optionale Messung der 5-V-Versorgung** über einen Spannungsteiler (2 × 10 kΩ) an IO39: `vmon on|off`,
+  Kalibrierung mit `vmon cal <Volt>`; Warnung unter 4,6 V.
+- Die Statuszeile alle 10 s zeigt zusätzlich die CPU-Last je Kern (und die Versorgungsspannung, falls
+  gemessen).
+- Warnung beim Start, wenn der letzte Neustart durch Unterspannung (Brownout) ausgelöst wurde.
+
+## [3.8.1] – 19.10.2026
+
+### Behoben
+- TFT blieb nach **„Um 180° drehen“** (und anderen TFT-Einstellungen) **weiß**, bis die Stromversorgung
+  getrennt wurde. Drehung, Versatz und Farben werden jetzt sofort ohne Neustart übernommen (das Display
+  wird neu initialisiert, inklusive Hardware-Reset); nur ein Wechsel des Displaytyps startet die Bridge neu.
+- TFT/OLED konnte nach einer Störung auf den Leitungen auf einer Seite **hängen bleiben**: Ausrichtung,
+  Farbformat und Adressierung werden jetzt bei jedem Bild erneut gesendet, das TFT bekommt alle 30 s
+  „Schlafmodus aus/Anzeige an“. Vor dem Einschalten schreibt die Firmware ein schwarzes Bild.
+- SPI-Takt des TFT von 16 auf 8 MHz gesenkt (zuverlässiger mit Steckbrett-Kabeln).
+
+## [3.8] – 19.10.2026
+
+### Neu
+- **Farb-TFT-Displays mit ST7735** (SPI): 1,8″ 160×128, 1,44″ 128×128 und 0,96″ 160×80.
+  Anschluss: SCL/SCK = GPIO32, SDA/MOSI = GPIO33, DC = IO4, CS = IO14, RES = GPIO5, BL an 3V3.
+  Dieselben Seiten in Farbe (Kopfzeile in der Farbe der Betriebsart, Download blau, Upload orange,
+  Warnungen rot); größeres Layout mit großen Werten und breitem Verlauf bei 160×128 und 128×128.
+  Bildspeicher mit 16-Farben-Palette (höchstens 10 KB RAM, nur wenn ein TFT gewählt ist).
+- Webinterface „Display“: **Auswahl des Displaytyps** (OLED, drei TFT-Größen, keins) mit dem Anschluss
+  für den gewählten Typ; für TFTs Versatz X/Y, Rot/Blau vertauschen und Farben invertieren, mit
+  Voreinstellungen je Größe.
+
+### Geändert
+- Display-Treiber nach `src/display.h` verschoben (gemeinsamer Zeichen-Code für OLED und TFT).
+
+## [3.7] – 19.10.2026
+
+### Neu
+- **Optionales OLED-Display** (128×64, SSD1306 oder SSD1315, I²C an SDA = GPIO33 „485_EN“,
+  SCL = GPIO32 „CFG“, VCC 3V3). Wird beim Start automatisch erkannt; eigener kleiner Treiber und
+  eigene Schrift, keine externe Bibliothek (rund 8 KB).
+  - Seiten alle 5 s: Adresse des Webinterface, Datenrate am LAN-Port (groß, mit Verlauf), WLAN
+    (Signal in den Client-Betriebsarten, Anzahl und Namen der Geräte in den Access-Point-Betriebsarten);
+    zusätzlich eine Hinweisseite, wenn etwas nicht stimmt
+  - Startbild mit Firmware-Version; die Sprache des Displays folgt dem Webinterface
+  - Einbrennschutz: Inhalt verschiebt sich jede Minute um wenige Pixel, Abdunkeln nach 1 Minute,
+    wieder hell bei Ereignissen (Kabel, WLAN, neue Geräte) und beim Öffnen des Webinterface
+- Abschnitt **„Display“** im Webinterface: Erkennungsstatus mit Anschlusshinweis, an/aus, Abdunkeln,
+  Drehen um 180°.
+- `tools/gen_font.py` erzeugt die Schrift fürs Display (Grundlage: LCD_FONT aus luma.core, MIT).
+
 ## [3.6.2] – 08.10.2026
 
 ### Behoben

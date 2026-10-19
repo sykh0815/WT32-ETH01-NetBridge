@@ -15,6 +15,11 @@
 #include <esp_random.h>
 #include <mbedtls/sha256.h>
 #include "oui_table.h"
+#include "display.h"
+#include "qr.h"
+#include <time.h>
+#include <nvs.h>
+#include <esp_idf_version.h>
 
 // Zwei Betriebsarten (Umschaltung im Webinterface, danach Neustart):
 //  NAT:    Ethernet-LAN ist ein eigenes Netz 192.168.50.0/24 mit DHCP-Server; WLAN ist der Upstream.
@@ -85,6 +90,15 @@ bool fwIsPrivateOrLocal(uint32_t ip);
 void useCountingTransmit();
 esp_err_t onApNatUplinkInput(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv);
 String webPasswordSectionHtml();
+String displaySectionHtml();
+void displayWake();
+extern bool displayEnglish;
+extern bool displayOn;
+String displayStatusPill();
+String clockText();
+String uptimeText();
+float supplyVoltage();
+extern float cpuLoad[2];
 
 // Piktogramme (24x24, Linien) fuer Firewall und Abschnitte
 const char FW_ICON_SHIELD[] = "<path d='M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z'/><path d='M9 12l2 2 4-4'/>";
@@ -96,13 +110,17 @@ const char FW_ICON_DEVICE[] = "<rect x='6' y='2.5' width='12' height='19' rx='2.
 const char FW_ICON_BLOCKED[] = "<circle cx='12' cy='12' r='9'/><path d='M5.7 5.7l12.6 12.6'/>";
 const char SEC_ICON_WIFI[] = "<path d='M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.5 16a5 5 0 0 1 7 0'/><circle cx='12' cy='19.5' r='1.2' fill='currentColor'/>";
 const char SEC_ICON_MODE[] = "<path d='M4 7h10M18 7h2M4 17h4M12 17h8'/><circle cx='16' cy='7' r='2.2'/><circle cx='10' cy='17' r='2.2'/>";
+const char SEC_ICON_DISPLAY[] = "<rect x='2.5' y='5' width='19' height='12' rx='1.5'/><path d='M9 21h6M12 17v4M6 9h6M6 12.5h9'/>";
+const char SEC_ICON_DIM[] = "<path d='M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z'/>";
+const char SEC_ICON_FLIP[] = "<path d='M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3'/><path d='M18 3v4h-4M6 21v-4h4'/>";
+const char SEC_ICON_SUN[] = "<circle cx='12' cy='12' r='4'/><path d='M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4'/>";
 const char SEC_ICON_LOCK[] = "<rect x='4.5' y='10.5' width='15' height='10' rx='2'/><path d='M8 10.5V7.5a4 4 0 0 1 8 0v3'/>";
 const char FW_ICON_DEFAULT[] = "<path d='M4 12h12M12 6l6 6-6 6'/><path d='M20 5v14'/>";
 String pill(const char *cls, const char *text) { return String("<span class='pill ") + cls + "'>" + text + "</span>"; }
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.6.2";
+constexpr char FIRMWARE_VERSION[] = "3.14";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1074,7 +1092,7 @@ String languageSwitchHtml() {
 // ---------------------------------------------------------------------------
 
 String pageHeader(const String &title) {
-  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:40px 96px 78px minmax(110px,1fr) 90px 2.6em auto;grid-template-areas:'on act pr dst pt hits btn';gap:6px;align-items:center;margin-top:6px;padding:6px;border:1px solid #dbe5ee;border-radius:10px;background:#fbfdff}.fwrule .on{grid-area:on}.fwrule .act{grid-area:act}.fwrule .pr{grid-area:pr}.fwrule .dst{grid-area:dst}.fwrule .pt{grid-area:pt}.fwrule .hits{grid-area:hits}.fwrule .rbtn{grid-area:btn}.fwrule.fwhead{border:0;background:none;padding:0 6px;margin-top:4px;font-size:12px;font-weight:bold;color:#4b5865}.fwrule.fwhead span:nth-child(1){grid-area:on}.fwrule.fwhead span:nth-child(2){grid-area:act}.fwrule.fwhead span:nth-child(3){grid-area:pr}.fwrule.fwhead span:nth-child(4){grid-area:dst}.fwrule.fwhead span:nth-child(5){grid-area:pt}.fwrule.fwhead span:nth-child(6){grid-area:hits}.fwrule.fwhead span:nth-child(7){grid-area:btn}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input,.fwrule select{padding:7px 5px;font-size:13px}.fwrule:has(.act option[value=block]:checked) .act{color:#a32020;font-weight:bold;border-color:#e2a5a5}.fwrule:has(.act option[value=allow]:checked) .act{color:#08783d;font-weight:bold;border-color:#9fd2b4}.fwrule:has(.on:not(:checked)){opacity:.6}.rbtn{display:flex;gap:3px}.rbtn button{margin:0;padding:6px 7px;background:#eef3f8;color:#17212b;font-size:14px;line-height:1;border-radius:6px}.rbtn button:hover{background:#dde7f1}.rbtn .del{color:#a32020}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}.fwopt{display:flex;gap:12px;align-items:center;margin-top:10px;padding:12px 14px;border:1px solid #cbd8e3;border-radius:12px;background:#fff;font-weight:normal;cursor:pointer}.fwopt:has(input.tg:checked){border-color:#1263a6;background:#f3f8fd}.fwopt .ic{flex:none;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:#eaf1f8;color:#1263a6}.fwopt .ic svg{width:23px;height:23px}.fwopt:has(input.tg:checked) .ic{background:#1263a6;color:#fff}.fwopt .tx{flex:1;min-width:0}.fwopt .tx small{display:block;margin-top:3px;line-height:1.4}.fwopt.main{margin-top:14px;border-width:2px}.fwopt.main:has(input.tg:checked){border-color:#08783d;background:#eef9f2}.fwopt.main:has(input.tg:checked) .ic{background:#08783d}.fwopt.fwdef select{width:auto;flex:none}.fwopt.fwdef:has(option[value=block]:checked) .ic{background:#a32020;color:#fff}.fwbox:has(input[name=fw_on]:not(:checked)) .fwsub{opacity:.55}input.tg{-webkit-appearance:none;appearance:none;flex:none;position:relative;width:46px;height:26px;margin:0;padding:0;border:0;border-radius:13px;background:#c5d0da;cursor:pointer;transition:background .2s}input.tg::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0004;transition:left .2s}input.tg:checked{background:#1263a6}input.tg:checked::after{left:23px}input.tg.sm{width:38px;height:22px}input.tg.sm::after{width:16px;height:16px}input.tg.sm:checked::after{left:19px}.fwopt.main input.tg:checked{background:#08783d}.fwh{display:flex;align-items:center;gap:8px;margin:24px 0 4px;font-size:16px}.fwh svg{width:20px;height:20px;color:#1263a6}.fwh small{font-weight:normal}.fwempty{display:none;margin:8px 0;padding:12px;border:1px dashed #cbd8e3;border-radius:10px;color:#4b5865;text-align:center;font-size:14px}button.add{margin-top:10px}label.fwmacs{margin-top:14px;font-size:14px}label.fwmacs textarea{margin-top:8px}.fwpick{margin:12px 0 2px}.fwstat{display:flex;align-items:center;gap:8px;margin-top:18px;padding:10px 12px;border-radius:10px;background:#f4f6f8;font-size:14px;color:#4b5865}.fwstat svg{width:20px;height:20px;color:#a32020;flex:none}@media(max-width:600px){.fwrule{grid-template-columns:40px 1fr 1fr auto;grid-template-areas:'on act pr btn' 'dst dst pt hits'}.fwrule.fwhead{display:none!important}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}.hd{display:flex;align-items:center;gap:14px;margin:0 0 14px}.hd h1{margin:0;font-size:26px;line-height:1.15}.hd .sub{display:block;font-size:14px;color:#4b5865;margin-top:3px}.board{flex:none;width:96px;height:auto;filter:drop-shadow(0 2px 3px #0003)}.led{fill:#4a5560;transition:fill .3s}.led.on{fill:#3ddc84}.led.act{fill:#f5c518;animation:blink .8s ease-in-out infinite}.led.wifi{fill:#4aa8ff}@keyframes blink{50%{opacity:.3}}.modebar{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:14px;color:#fff;text-decoration:none;box-shadow:0 3px 10px #0002;margin-bottom:12px}.modebar.m-nat{background:linear-gradient(120deg,#0f5592,#1d82d6)}.modebar.m-bridge{background:linear-gradient(120deg,#06683a,#14a35d)}.modebar.m-apnat{background:linear-gradient(120deg,#5b318f,#8c5fd0)}.modebar.m-apbridge{background:linear-gradient(120deg,#b04f08,#e8892c)}.modebar .mi{flex:none;display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:12px;background:#ffffff2b}.modebar .mi svg{width:34px;height:34px;color:#fff}.modebar .mt{flex:1;min-width:0}.modebar small{display:block;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.85}.modebar b{display:block;font-size:18px;margin:2px 0}.modebar em{display:block;font-style:normal;font-size:13px;opacity:.92;overflow-wrap:anywhere}.modebar .mc{flex:none;font-size:13px;font-weight:bold;padding:6px 10px;border-radius:99px;background:#ffffff2b}.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.tile{position:relative;padding:10px 12px 10px 26px;border-radius:12px;background:#f4f7fa;border:1px solid #dfe7ef}.tile small{display:block;font-size:12px;color:#4b5865}.tile b{display:block;font-size:15px;margin-top:2px;line-height:1.3}.tile .dot{position:absolute;left:11px;top:15px;width:8px;height:8px;border-radius:50%;background:#aab4be}.tile.t-ok .dot{background:#1a9b59;box-shadow:0 0 0 3px #1a9b5933}.tile.t-warn .dot{background:#dd9a17;box-shadow:0 0 0 3px #dd9a1733}.tile.t-bad .dot{background:#ce3e3e;box-shadow:0 0 0 3px #ce3e3e33}h2.sett{margin-top:30px}details.sec{margin-top:10px;border:1px solid #cbd8e3;border-radius:14px;background:#fff}details.sec[open]{border-color:#9fbbd6;box-shadow:0 2px 10px #12639a14}details.sec>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer;font-weight:bold;font-size:16px}details.sec>summary::-webkit-details-marker{display:none}.si{flex:none;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:#eaf1f8;color:#1263a6}.si svg{width:21px;height:21px}.st{flex:1}.chev{flex:none;font-size:24px;line-height:1;color:#6b7885;transition:transform .2s}details[open] .chev{transform:rotate(90deg)}.sb{padding:0 16px 16px;border-top:1px solid #e3eaf1}.pill{flex:none;font-size:12px;font-weight:bold;padding:3px 9px;border-radius:99px;background:#e9edf1;color:#4b5865}.pill.ok{background:#e3f4ea;color:#08783d}.pill.warn{background:#fdf1dc;color:#875b00}.pill.bad{background:#fdecec;color:#a32020}.sb .fwbox{border:0;padding:0;margin:0}@media(max-width:600px){.tiles{grid-template-columns:1fr 1fr}.tiles .tile:last-child{grid-column:span 2}.modebar .mc{display:none}.board{width:76px}}.tw{overflow-x:auto}table.nb{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}table.nb th{text-align:left;font-size:12px;color:#4b5865;padding:4px}table.nb td{padding:6px 4px;border-top:1px solid #d6e2ee;vertical-align:top;white-space:nowrap}table.nb td small{display:block;color:#4b5865;font-size:12px}table.nb .mono{font-family:monospace;font-size:12px}table.nb tr.old{opacity:.55}.spark{display:block;width:100%;height:auto;margin:6px 0 2px;background:#fff;border:1px solid #d6e2ee;border-radius:8px}.spark .gl{stroke:#e3eaf1;stroke-width:1}.spark .vl{stroke:#e3eaf1;stroke-dasharray:4 4}.spark .yl,.spark .xl{font:13px Arial,sans-serif;fill:#6b7885}.spark .yl{text-anchor:end}.spark polyline{fill:none;stroke-width:2;stroke-linejoin:round}.spark .dn{stroke:#1263a6}.spark .up{stroke:#dd9a17}.spark .adn{fill:#1263a6;fill-opacity:.12}.spark .aup{fill:#dd9a17;fill-opacity:.15}.leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:#4b5865;margin-bottom:4px}.leg .sw{display:inline-block;width:12px;height:3px;border-radius:2px;margin:0 5px 3px 0;vertical-align:middle}.leg .sw.dn{background:#1263a6}.leg .sw.up{background:#dd9a17}span.dn{color:#1263a6}span.up{color:#a56d00}form:has(input[name=web_off]:checked) .pwfields{display:none}.card>.dangerbox{margin:0 0 16px}.dangerbox a{color:#7a1414;font-weight:bold}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}.cl{padding:9px 0;border-top:1px solid #d6e2ee}.cl:first-child{border-top:0}.cl div{display:flex;justify-content:space-between;gap:10px}.cl div span{color:#4b5865}.cl small{display:block;margin-top:3px}.mini{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px}.mini .bar{width:4px;border-radius:1px}</style></head><body><div class='card'>";
+  return String("<!doctype html><html lang='") + (uiEnglish ? "en" : "de") + "'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:30px auto;padding:0 18px;background:#f2f6fa;color:#17212b}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 4px 18px #0002}h1{margin-top:0;color:#1263a6}h2{font-size:18px;margin:26px 0 4px}.status{padding:12px 14px;margin:12px 0;border-radius:10px;background:#edf5fd}.ok{color:#08783d}.wait{color:#875b00}.bad{color:#a32020}.meter{display:flex;align-items:flex-end;gap:4px;height:38px;margin:10px 0 3px}.bar{width:13px;border-radius:3px 3px 0 0;background:#d3dae1}.bar.on.good{background:#1a9b59}.bar.on.fair{background:#dd9a17}.bar.on.weak{background:#ce3e3e}label{display:block;font-weight:bold;margin-top:16px}input{box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid #aac;border-radius:8px;font-size:16px}label.mode{display:flex;gap:14px;align-items:flex-start;font-weight:normal;margin-top:12px;padding:14px;border:2px solid #cbd8e3;border-radius:12px;cursor:pointer;background:#fff}label.mode:has(input:checked){border-color:#1263a6;background:#f3f8fd}label.mode input{width:auto;margin:4px 0 0}.mode svg{flex:none;width:46px;height:46px;color:#1263a6}.mode b{display:block;font-size:17px;margin-bottom:4px}.mode p{margin:6px 0 0;color:#4b5865;font-size:14px;line-height:1.4}.badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:bold}.badge.slow{background:#fdf1dc;color:#875b00}.badge.fast{background:#e3f4ea;color:#08783d}.alert{display:flex;gap:14px;align-items:flex-start;background:#c62828;color:#fff;padding:16px 18px;border-radius:12px;margin:0 0 18px;line-height:1.45;box-shadow:0 0 0 4px #f8d4d4;animation:pulse 2s ease-in-out infinite}.alert svg{flex:none;width:34px;height:34px}.alert a{display:inline-block;margin-top:8px;color:#fff;font-weight:bold;text-decoration:underline}@keyframes pulse{50%{box-shadow:0 0 0 8px #f8d4d4}}.group{margin:18px 0 0;font-size:13px;font-weight:bold;color:#4b5865;text-transform:uppercase;letter-spacing:.03em}.badge.danger{background:#c62828;color:#fff}.dangerbox{display:flex;gap:12px;margin-top:10px;padding:14px 16px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.dangerbox svg{flex:none;width:30px;height:30px;color:#c62828}form:has(input[name=mode]) .dangerbox{display:none}form:has(input[value=apbridge]:checked) .dangerbox{display:flex}.fwbox{border:1px solid #cbd8e3;border-radius:12px;padding:6px 16px 16px;margin-top:10px}label.chk{display:flex;gap:10px;align-items:flex-start;font-weight:normal;margin-top:12px}label.chk input{width:auto;margin:3px 0 0}label.chk small{display:block;margin-top:2px}.fwrule{display:grid;grid-template-columns:40px 96px 78px minmax(110px,1fr) 90px 2.6em auto;grid-template-areas:'on act pr dst pt hits btn';gap:6px;align-items:center;margin-top:6px;padding:6px;border:1px solid #dbe5ee;border-radius:10px;background:#fbfdff}.fwrule .on{grid-area:on}.fwrule .act{grid-area:act}.fwrule .pr{grid-area:pr}.fwrule .dst{grid-area:dst}.fwrule .pt{grid-area:pt}.fwrule .hits{grid-area:hits}.fwrule .rbtn{grid-area:btn}.fwrule.fwhead{border:0;background:none;padding:0 6px;margin-top:4px;font-size:12px;font-weight:bold;color:#4b5865}.fwrule.fwhead span:nth-child(1){grid-area:on}.fwrule.fwhead span:nth-child(2){grid-area:act}.fwrule.fwhead span:nth-child(3){grid-area:pr}.fwrule.fwhead span:nth-child(4){grid-area:dst}.fwrule.fwhead span:nth-child(5){grid-area:pt}.fwrule.fwhead span:nth-child(6){grid-area:hits}.fwrule.fwhead span:nth-child(7){grid-area:btn}.fwrule input,.fwrule select,select,textarea{box-sizing:border-box;width:100%;margin:0;padding:8px;border:1px solid #aac;border-radius:8px;font-size:14px;background:#fff}.fwrule input,.fwrule select{padding:7px 5px;font-size:13px}.fwrule:has(.act option[value=block]:checked) .act{color:#a32020;font-weight:bold;border-color:#e2a5a5}.fwrule:has(.act option[value=allow]:checked) .act{color:#08783d;font-weight:bold;border-color:#9fd2b4}.fwrule:has(.on:not(:checked)){opacity:.6}.rbtn{display:flex;gap:3px}.rbtn button{margin:0;padding:6px 7px;background:#eef3f8;color:#17212b;font-size:14px;line-height:1;border-radius:6px}.rbtn button:hover{background:#dde7f1}.rbtn .del{color:#a32020}.hits{font-size:12px;color:#4b5865;text-align:right}textarea{min-height:90px;font-family:monospace}button.small{margin:6px 6px 0 0;padding:6px 10px;font-size:13px}.fwopt{display:flex;gap:12px;align-items:center;margin-top:10px;padding:12px 14px;border:1px solid #cbd8e3;border-radius:12px;background:#fff;font-weight:normal;cursor:pointer}.fwopt:has(input.tg:checked){border-color:#1263a6;background:#f3f8fd}.fwopt .ic{flex:none;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:#eaf1f8;color:#1263a6}.fwopt .ic svg{width:23px;height:23px}.fwopt:has(input.tg:checked) .ic{background:#1263a6;color:#fff}.fwopt .tx{flex:1;min-width:0}.fwopt .tx small{display:block;margin-top:3px;line-height:1.4}.fwopt.main{margin-top:14px;border-width:2px}.fwopt.main:has(input.tg:checked){border-color:#08783d;background:#eef9f2}.fwopt.main:has(input.tg:checked) .ic{background:#08783d}.fwopt.fwdef select{width:auto;flex:none}.fwopt.fwdef:has(option[value=block]:checked) .ic{background:#a32020;color:#fff}.fwbox:has(input[name=fw_on]:not(:checked)) .fwsub{opacity:.55}input.tg{-webkit-appearance:none;appearance:none;flex:none;position:relative;width:46px;height:26px;margin:0;padding:0;border:0;border-radius:13px;background:#c5d0da;cursor:pointer;transition:background .2s}input.tg::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0004;transition:left .2s}input.tg:checked{background:#1263a6}input.tg:checked::after{left:23px}input.tg.sm{width:38px;height:22px}input.tg.sm::after{width:16px;height:16px}input.tg.sm:checked::after{left:19px}.fwopt.main input.tg:checked{background:#08783d}.fwh{display:flex;align-items:center;gap:8px;margin:24px 0 4px;font-size:16px}.fwh svg{width:20px;height:20px;color:#1263a6}.fwh small{font-weight:normal}.fwempty{display:none;margin:8px 0;padding:12px;border:1px dashed #cbd8e3;border-radius:10px;color:#4b5865;text-align:center;font-size:14px}button.add{margin-top:10px}label.fwmacs{margin-top:14px;font-size:14px}label.fwmacs textarea{margin-top:8px}.fwpick{margin:12px 0 2px}.fwstat{display:flex;align-items:center;gap:8px;margin-top:18px;padding:10px 12px;border-radius:10px;background:#f4f6f8;font-size:14px;color:#4b5865}.fwstat svg{width:20px;height:20px;color:#a32020;flex:none}@media(max-width:600px){.fwrule{grid-template-columns:40px 1fr 1fr auto;grid-template-areas:'on act pr btn' 'dst dst pt hits'}.fwrule.fwhead{display:none!important}}.apfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid #1263a6;border-radius:12px;background:#f3f8fd}form:has(input[value=apnat]:checked) .apfields,form:has(input[value=apbridge]:checked) .apfields{display:block}.openwarn{display:none;gap:12px;margin-top:10px;padding:12px 14px;border:2px solid #c62828;border-radius:12px;background:#fdecec;color:#7a1414;font-size:14px;line-height:1.45}.openwarn svg{flex:none;width:28px;height:28px;color:#c62828}form:has(input[name=m_open]:checked) .openwarn,form:has(input[name=ap_open]:checked) .openwarn{display:flex}form:has(input[name=m_open]:checked) .pwfields,form:has(input[name=ap_open]:checked) .pwfields{display:none}.alert.static{animation:none}.dclock{margin:6px 0 2px;font-size:14px}.dnight{display:flex;gap:10px;flex-wrap:wrap;padding-bottom:4px}.dnight label{flex:1 1 90px;margin-top:4px}.dnight input,.dnight select{margin-top:4px;padding:8px}form:has(input[name=night_on]:not(:checked)) .dnight{opacity:.45}.dhead{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:12px 0 2px}.dbezel{flex:none;max-width:100%;box-sizing:border-box;padding:9px;border-radius:12px;background:#1b232b;box-shadow:inset 0 0 0 2px #3a4652,0 3px 10px #0002}.dbezel canvas{display:block;width:240px;max-width:100%;height:auto;image-rendering:pixelated;border-radius:3px;background:#000}.dbezel.mono canvas{width:256px}.dstate{display:flex;flex-direction:column;gap:4px;min-width:150px}.dstate b{font-size:17px}.dstate small{color:#4b5865}.dstate .pill{align-self:flex-start}.dstate .live{font-size:12px}.dgrp{border:1px solid #dbe5ee;border-radius:14px;padding:2px 14px 12px;margin-top:14px;background:#fff}.dgrp .fwh{margin:12px 0 4px}.dwiring{margin-top:10px}.dwiring summary{cursor:pointer;color:#1263a6;font-size:14px;font-weight:bold}.dsw{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:10px 0;border-top:1px solid #e8eef4;font-weight:normal;cursor:pointer}.dsw b{display:block;font-size:15px}.dsw small{display:block;margin-top:2px}.dtft{margin-top:6px}.doffs{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0}.doffs>span{font-weight:bold}.doffs label{display:flex;align-items:center;gap:6px;margin:0}.doffs input{width:72px;margin:0;padding:7px 8px}.doffs small{flex-basis:100%}.dgrp .bri b{flex:none;min-width:44px;text-align:right;color:#1263a6}.dpage{display:flex;gap:10px;flex-wrap:wrap}.dpage label{flex:1 1 220px}.dpage label.dint{flex:0 1 140px}form:has(select[name=disp_page] option[value='0']:not(:checked)) .dint{opacity:.45}.bri{display:flex;align-items:center;gap:12px;margin-top:14px;padding:12px 14px;border:1px solid #cbd8e3;border-radius:12px}.bri .ic{flex:none;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:#eaf1f8;color:#1263a6}.bri .ic svg{width:23px;height:23px}.bri label{margin:0;flex:none;font-size:15px}.bri input[type=range]{flex:1;margin:0;padding:0;border:0;accent-color:#1263a6;height:28px}.brihint{margin:4px 0 0}.dwire{display:none;margin-top:8px}form:has(select[name=disp_type] option[value='0']:checked) .dwire.oled{display:block}form:has(select[name=disp_type] option[value='2']:checked) .dwire.tft,form:has(select[name=disp_type] option[value='3']:checked) .dwire.tft,form:has(select[name=disp_type] option[value='4']:checked) .dwire.tft{display:block}.offs{display:flex;gap:8px}.offs input{width:90px}.hd{display:flex;align-items:center;gap:14px;margin:0 0 14px}.hd h1{margin:0;font-size:26px;line-height:1.15}.hd .sub{display:block;font-size:14px;color:#4b5865;margin-top:3px}.board{flex:none;width:96px;height:auto;filter:drop-shadow(0 2px 3px #0003)}.led{fill:#4a5560;transition:fill .3s}.led.on{fill:#3ddc84}.led.act{fill:#f5c518;animation:blink .8s ease-in-out infinite}.led.wifi{fill:#4aa8ff}@keyframes blink{50%{opacity:.3}}.modebar{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:14px;color:#fff;text-decoration:none;box-shadow:0 3px 10px #0002;margin-bottom:12px}.modebar.m-nat{background:linear-gradient(120deg,#0f5592,#1d82d6)}.modebar.m-bridge{background:linear-gradient(120deg,#06683a,#14a35d)}.modebar.m-apnat{background:linear-gradient(120deg,#5b318f,#8c5fd0)}.modebar.m-apbridge{background:linear-gradient(120deg,#b04f08,#e8892c)}.modebar .mi{flex:none;display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:12px;background:#ffffff2b}.modebar .mi svg{width:34px;height:34px;color:#fff}.modebar .mt{flex:1;min-width:0}.modebar small{display:block;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.85}.modebar b{display:block;font-size:18px;margin:2px 0}.modebar em{display:block;font-style:normal;font-size:13px;opacity:.92;overflow-wrap:anywhere}.modebar .mc{flex:none;font-size:13px;font-weight:bold;padding:6px 10px;border-radius:99px;background:#ffffff2b}.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.tile{position:relative;padding:10px 12px 10px 26px;border-radius:12px;background:#f4f7fa;border:1px solid #dfe7ef}.tile small{display:block;font-size:12px;color:#4b5865}.tile b{display:block;font-size:15px;margin-top:2px;line-height:1.3}.tile .dot{position:absolute;left:11px;top:15px;width:8px;height:8px;border-radius:50%;background:#aab4be}.tile.t-ok .dot{background:#1a9b59;box-shadow:0 0 0 3px #1a9b5933}.tile.t-warn .dot{background:#dd9a17;box-shadow:0 0 0 3px #dd9a1733}.tile.t-bad .dot{background:#ce3e3e;box-shadow:0 0 0 3px #ce3e3e33}h2.sett{margin-top:30px}details.sec{margin-top:10px;border:1px solid #cbd8e3;border-radius:14px;background:#fff}details.sec[open]{border-color:#9fbbd6;box-shadow:0 2px 10px #12639a14}details.sec>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer;font-weight:bold;font-size:16px}details.sec>summary::-webkit-details-marker{display:none}.si{flex:none;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;background:#eaf1f8;color:#1263a6}.si svg{width:21px;height:21px}.st{flex:1}.chev{flex:none;font-size:24px;line-height:1;color:#6b7885;transition:transform .2s}details[open] .chev{transform:rotate(90deg)}.sb{padding:0 16px 16px;border-top:1px solid #e3eaf1}.pill{flex:none;font-size:12px;font-weight:bold;padding:3px 9px;border-radius:99px;background:#e9edf1;color:#4b5865}.pill.ok{background:#e3f4ea;color:#08783d}.pill.warn{background:#fdf1dc;color:#875b00}.pill.bad{background:#fdecec;color:#a32020}.sb .fwbox{border:0;padding:0;margin:0}@media(max-width:600px){.tiles{grid-template-columns:1fr 1fr}.tiles .tile:last-child{grid-column:span 2}.modebar .mc{display:none}.board{width:76px}}.tw{overflow-x:auto}table.nb{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}table.nb th{text-align:left;font-size:12px;color:#4b5865;padding:4px}table.nb td{padding:6px 4px;border-top:1px solid #d6e2ee;vertical-align:top;white-space:nowrap}table.nb td small{display:block;color:#4b5865;font-size:12px}table.nb .mono{font-family:monospace;font-size:12px}table.nb tr.old{opacity:.55}.spark{display:block;width:100%;height:auto;margin:6px 0 2px;background:#fff;border:1px solid #d6e2ee;border-radius:8px}.spark .gl{stroke:#e3eaf1;stroke-width:1}.spark .vl{stroke:#e3eaf1;stroke-dasharray:4 4}.spark .yl,.spark .xl{font:13px Arial,sans-serif;fill:#6b7885}.spark .yl{text-anchor:end}.spark polyline{fill:none;stroke-width:2;stroke-linejoin:round}.spark .dn{stroke:#1263a6}.spark .up{stroke:#dd9a17}.spark .adn{fill:#1263a6;fill-opacity:.12}.spark .aup{fill:#dd9a17;fill-opacity:.15}.leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:#4b5865;margin-bottom:4px}.leg .sw{display:inline-block;width:12px;height:3px;border-radius:2px;margin:0 5px 3px 0;vertical-align:middle}.leg .sw.dn{background:#1263a6}.leg .sw.up{background:#dd9a17}span.dn{color:#1263a6}span.up{color:#a56d00}form:has(input[name=web_off]:checked) .pwfields{display:none}.card>.dangerbox{margin:0 0 16px}.dangerbox a{color:#7a1414;font-weight:bold}h1 .sub{display:block;font-size:15px;font-weight:normal;color:#4b5865;margin-top:2px}label.ack{display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:bold;color:#7a1414}label.ack input{width:auto;margin:3px 0 0}.apbox.open{border:2px solid #c62828;background:#fdecec;border-radius:12px;padding:4px 16px 16px}.lang{display:flex;justify-content:flex-end;gap:6px;margin:-8px -8px 8px 0}.lang a{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #cbd8e3;border-radius:8px;text-decoration:none;color:#4b5865;font-size:13px;font-weight:bold}.lang a.on{border-color:#1263a6;background:#eaf3fc;color:#1263a6}.lang svg{width:24px;height:15px;border-radius:2px;box-shadow:0 0 0 1px #0003}button{margin-top:22px;background:#1263a6;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}.secondary{margin-top:12px;background:#587080}.network{display:block;width:100%;text-align:left;margin-top:8px;padding:11px;border:1px solid #cbd8e3;border-radius:8px;background:#f8fbfe;color:#17212b}.network b{display:block}.network small,small{color:#4b5865}table.info{width:100%;border-collapse:collapse;margin-top:8px}table.info td{padding:5px 4px;border-top:1px solid #d6e2ee;vertical-align:top}table.info td:first-child{color:#4b5865;width:45%}.cl{padding:9px 0;border-top:1px solid #d6e2ee}.cl:first-child{border-top:0}.cl div{display:flex;justify-content:space-between;gap:10px}.cl div span{color:#4b5865}.cl small{display:block;margin-top:3px}.mini{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px}.mini .bar{width:4px;border-radius:1px}</style></head><body><div class='card'>";
 }
 
 String pageFooter() { return "</div></body></html>"; }
@@ -1297,9 +1315,12 @@ const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router
   "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired',webPwShort:'The password must be at least 8 characters long.',fwMax:'At most 32 rules.',noCableShort:'no cable',notConnShort:'not connected',devices:' devices',oneDevice:'1 device',rate:'Data rate',peak:'Peak',total:'Data since start',last2:'last 2 minutes',now:'now',noNeighbors:'No devices detected yet.',router:'Router',seenCol:'Last seen',justNow:'just now',agoA:'',agoB:' ago',dec:'.'};";
 
 // Alle 10 s eine Diagnosezeile im seriellen Log (hilft bei Verbindungsproblemen)
+uint32_t diagIntervalMs = 10000;  // Statuszeile: Abstand (0 = aus), Befehl "diag"
+bool consoleTyping = false;       // gerade wird ein Befehl eingetippt: keine Statuszeile dazwischen
+
 void logDiagnostics() {
   static uint32_t last = 0;
-  if (millis() - last < 10000) return;
+  if (diagIntervalMs == 0 || consoleTyping || millis() - last < diagIntervalMs) return;
   last = millis();
   uint8_t channel = 0;
   wifi_second_chan_t second;
@@ -1314,9 +1335,14 @@ void logDiagnostics() {
       router = "getrennt (Grund " + String(lastStaDisconnectReason) + "), Versuche " + String(failedConnectAttempts) + ", naechster in " + String(wait > 0 ? wait : 0) + " s";
     }
   }
-  Serial.printf("Diag: %lus | %s | Router: %s | WLAN-Geraete: %d | Kanal %u | Heap frei %u, min %u, Block %u\n",
+  char extra[40] = "";
+  const float volts = supplyVoltage();
+  if (volts > 0) snprintf(extra, sizeof(extra), " | 5V %.2f V", volts);
+  char cpu[16] = "?";
+  if (cpuLoad[0] >= 0) snprintf(cpu, sizeof(cpu), "%d/%d %%", static_cast<int>(cpuLoad[0] + 0.5f), static_cast<int>(cpuLoad[1] + 0.5f));
+  Serial.printf("Diag: %lus | %s | Router: %s | WLAN-Geraete: %d | Kanal %u | CPU %s | Heap frei %u, min %u, Block %u%s\n",
                 static_cast<unsigned long>(millis() / 1000), modeNames[bridgeMode], router.c_str(), WiFi.softAPgetStationNum(), channel,
-                static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
+                cpu, static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()), extra);
 }
 
 // Captive Portal: Anfragen von Geraeten im Einrichtungs-WLAN an fremde Adressen (z. B. die
@@ -1337,6 +1363,11 @@ bool captiveRedirect() {
 void showHome() {
   if (captiveRedirect()) return;
   detectLanguage();
+  displayWake();  // Display kurz hell, wenn jemand das Webinterface oeffnet
+  if (uiEnglish != displayEnglish) {  // Display spricht die Sprache des Webinterface
+    displayEnglish = uiEnglish;
+    preferences.putBool("disp_en", displayEnglish);
+  }
   const bool bridge = bridgeMode == MODE_BRIDGE;
   const bool apNat = bridgeMode == MODE_AP_NAT;
   const bool apMode = isApMode();
@@ -1628,6 +1659,7 @@ void showHome() {
   if (!apMode) {
     out(collapsible(apForm, "ap", SEC_ICON_WIFI, apOpen ? pill("bad", T("offen", "open")) : pill("ok", T("gesichert", "secured")), apOpen && !apOpenChosen));
   }
+  out(collapsible(displaySectionHtml(), "display", SEC_ICON_DISPLAY, displayStatusPill(), false));
   out(collapsible(webPasswordSectionHtml(), "webpw", SEC_ICON_LOCK, webPasswordSet() ? pill("ok", T("gesetzt", "set")) : pill("warn", T("kein Passwort", "no password")), false));
   out(footer);
   out(String("<p><small>") + T("Firmware-Version ", "Firmware version ") + FIRMWARE_VERSION + "</small></p>");
@@ -2804,6 +2836,1364 @@ void startBridgeLan() {
 }
 
 // ---------------------------------------------------------------------------
+// Display (optional), Auswahl im Webinterface:
+//  - OLED 128x64 (SSD1306/SSD1315), I2C:  SDA = GPIO33 ("485_EN"), SCL = GPIO32 ("CFG")
+//  - TFT ST7735 (160x128, 128x128, 160x80), SPI:  SCL/SCK = GPIO32, SDA/MOSI = GPIO33,
+//    DC = GPIO4, CS = GPIO14, RES = GPIO5 ("RXD"), BL an 3V3
+// Seiten wechseln alle 5 s. OLED-Einbrennschutz: Inhalt verschiebt sich jede Minute um bis zu 2 Pixel.
+// Nach 1 Minute ohne Ereignis wird abgedunkelt (TFT ohne Licht-Steuerung: dunklere Farben).
+// ---------------------------------------------------------------------------
+
+constexpr int DISP_PIN_A = 32;   // OLED: SCL, TFT: SCK ("SCL" auf dem Modul)
+constexpr int DISP_PIN_B = 33;   // OLED: SDA, TFT: MOSI ("SDA" auf dem Modul)
+constexpr int TFT_DC_PIN = 4;
+constexpr int TFT_CS_PIN = 14;
+constexpr int TFT_RST_PIN = 5;
+constexpr int TFT_BL_PIN = 17;  // optional: Hintergrundbeleuchtung per PWM ("TXD")
+constexpr uint32_t DISPLAY_BRIGHT_MS = 60000;
+constexpr int DISPLAY_HISTORY = 100;  // Verlauf der Datenrate (Sekunden)
+
+enum DisplayType : uint8_t { DISP_OLED = 0, DISP_NONE = 1, DISP_TFT_160X128 = 2, DISP_TFT_128X128 = 3, DISP_TFT_160X80 = 4 };
+struct TftPreset { int width, height, offsetX, offsetY; bool bgr, invert; };
+// Voreinstellungen je Modul (Querformat); Versatz und Farbreihenfolge lassen sich im Webinterface anpassen
+const TftPreset TFT_PRESETS[] = {
+  {160, 128, 0, 0, false, false},  // 1,8 Zoll
+  {128, 128, 3, 2, true, false},   // 1,44 Zoll
+  {160, 80, 1, 26, true, true},    // 0,96 Zoll IPS
+};
+
+OledGfx oledDev;
+TftGfx tftDev;
+Gfx *gfx = nullptr;                  // aktives Display (nullptr = keins)
+uint8_t displayType = DISP_OLED;
+TftConfig tftSettings;
+bool displayOn = true;         // Einstellung: Display an
+bool displayFlip = false;      // Einstellung: um 180 Grad gedreht
+bool displayDim = true;        // Einstellung: nach 1 Minute abdunkeln
+uint8_t displayBrightness = 100;  // Einstellung: Helligkeit 10..100 %
+uint8_t displayPageMode = 0;   // Einstellung: 0 = Seiten wechseln, 1 = nur Webinterface, 2 = nur LAN, 3 = nur WLAN
+uint8_t displayInterval = 5;   // Einstellung: Sekunden pro Seite beim Wechseln
+bool displayEvents = true;     // Einstellung: Ereignisse kurz einblenden
+bool tftBacklightPin = false;  // Einstellung: Hintergrundbeleuchtung des TFT an IO17 (PWM)
+bool displayEnglish = false;   // Sprache wie beim letzten Aufruf des Webinterface
+uint32_t displayWakeMs = 0;    // letzte Aktivitaet (volle Helligkeit)
+uint32_t displayHistory[DISPLAY_HISTORY][2] = {};  // Download, Upload
+int displayHistoryPos = 0;
+
+inline const char *DT(const char *de, const char *en) { return displayEnglish ? en : de; }
+void displayWake() { displayWakeMs = stampMs(); }
+bool displayIsTft(uint8_t type) { return type >= DISP_TFT_160X128 && type <= DISP_TFT_160X80; }
+bool displayBig() { return gfx != nullptr && gfx->height() >= 120; }  // grosses Layout (TFT 160x128 / 128x128)
+
+uint16_t displayModeColor() {
+  switch (bridgeMode) {
+    case MODE_BRIDGE: return TftGfx::rgb565(0x14A35D);
+    case MODE_AP_NAT: return TftGfx::rgb565(0x8C5FD0);
+    case MODE_AP_BRIDGE: return TftGfx::rgb565(0xE8892C);
+    default: return TftGfx::rgb565(0x1D82D6);
+  }
+}
+
+int displayFit(int x, int y, const String &text, int maxScale, uint8_t color);
+
+void displayBegin() {
+  displayType = preferences.getUChar("disp_type", DISP_OLED);
+  displayOn = preferences.getBool("disp_on", true);
+  displayFlip = preferences.getBool("disp_flip", false);
+  displayDim = preferences.getBool("disp_dim", true);
+  displayBrightness = constrain(preferences.getUChar("disp_bri", 100), static_cast<uint8_t>(10), static_cast<uint8_t>(100));
+  tftBacklightPin = preferences.getBool("tft_bl", false);
+  displayEvents = preferences.getBool("disp_evt", true);
+  displayPageMode = preferences.getUChar("disp_page", 0);
+  if (displayPageMode > 6) displayPageMode = 0;
+  displayInterval = constrain(preferences.getUChar("disp_int", 5), static_cast<uint8_t>(2), static_cast<uint8_t>(60));
+  displayEnglish = preferences.getBool("disp_en", false);
+  if (displayType == DISP_NONE) return;
+  if (displayIsTft(displayType)) {
+    const TftPreset &preset = TFT_PRESETS[displayType - DISP_TFT_160X128];
+    tftSettings.width = preset.width;
+    tftSettings.height = preset.height;
+    tftSettings.offsetX = preferences.getUChar("tft_offx", preset.offsetX);
+    tftSettings.offsetY = preferences.getUChar("tft_offy", preset.offsetY);
+    tftSettings.bgr = preferences.getBool("tft_bgr", preset.bgr);
+    tftSettings.invert = preferences.getBool("tft_inv", preset.invert);
+    tftSettings.rotate180 = displayFlip;
+    if (!tftDev.begin(tftSettings, DISP_PIN_A, DISP_PIN_B, TFT_DC_PIN, TFT_CS_PIN, TFT_RST_PIN, tftBacklightPin ? TFT_BL_PIN : -1)) {
+      Serial.println("TFT-Display konnte nicht gestartet werden (zu wenig Speicher?)");
+      return;
+    }
+    gfx = &tftDev;
+    tftDev.setPalette(displayModeColor());
+    Serial.printf("TFT-Display ST7735 %dx%d (SPI) gestartet\n", tftSettings.width, tftSettings.height);
+  } else {
+    if (!oledDev.begin(DISP_PIN_B, DISP_PIN_A)) {
+      Serial.println("Kein OLED-Display gefunden (optional: SDA GPIO33, SCL GPIO32)");
+      return;
+    }
+    oledDev.rotate180(displayFlip);
+    gfx = &oledDev;
+    Serial.printf("OLED-Display gefunden (I2C-Adresse 0x%02X)\n", oledDev.address());
+  }
+  gfx->setBrightness(displayBrightness);
+  if (!displayOn) gfx->power(false);
+  displayWake();
+  // Startbild bis zur ersten Statusseite
+  const bool big = displayBig();
+  gfx->setOffset(0, big ? 0 : (gfx->height() - 64) / 2);
+  gfx->clear();  // (kleines TFT: Startbild mittig)
+  if (big) {
+    gfx->fillRect(-10, -10, gfx->width() + 20, 30, C_MODE);
+    gfx->text(6, 4, "WT32-ETH01", 2, C_HEADTEXT);
+    displayFit(6, 40, String("NetBridge"), 3, C_WHITE);
+    gfx->text(6, 80, (String("Firmware ") + FIRMWARE_VERSION).c_str(), 1, C_GREY);
+    gfx->text(6, 96, DT("startet ...", "starting ..."), 1, C_WHITE);
+  } else {
+    gfx->text(0, 4, "WT32-ETH01", 2, C_WHITE);
+    gfx->text(0, 22, "NetBridge", 2, C_MODE);
+    gfx->text(0, 44, (String("Firmware ") + FIRMWARE_VERSION).c_str(), 1, C_GREY);
+    gfx->text(0, 55, DT("startet ...", "starting ..."), 1, C_WHITE);
+  }
+  gfx->show();
+}
+
+// Datenrate kompakt, z. B. "8,4 Mbit/s"
+String displayRate(uint32_t bits) {
+  char text[16];
+  const char comma = displayEnglish ? '.' : ',';
+  if (bits >= 10000000) snprintf(text, sizeof(text), "%lu Mbit/s", static_cast<unsigned long>(bits / 1000000));
+  else if (bits >= 1000000) snprintf(text, sizeof(text), "%lu%c%lu Mbit/s", static_cast<unsigned long>(bits / 1000000), comma, static_cast<unsigned long>(bits % 1000000 / 100000));
+  else if (bits >= 1000) snprintf(text, sizeof(text), "%lu kbit/s", static_cast<unsigned long>(bits / 1000));
+  else snprintf(text, sizeof(text), "%lu bit/s", static_cast<unsigned long>(bits));
+  return String(text);
+}
+
+// Zahl gross, Einheit klein dahinter. Liefert die x-Position danach.
+int displayValue(int x, int y, const String &value, int scale, uint8_t color) {
+  const int space = value.indexOf(' ');
+  x = gfx->text(x, y, value.substring(0, space).c_str(), scale, color);
+  return gfx->text(x + 2 + scale, y + 7 * scale - 7, value.substring(space + 1).c_str(), 1, color);
+}
+
+// Text in der groessten Stufe, die in die Breite passt
+int displayFit(int x, int y, const String &text, int maxScale, uint8_t color) {
+  int scale = maxScale;
+  while (scale > 1 && Gfx::textWidth(text.c_str(), scale) > gfx->width() - x - 2) --scale;
+  gfx->text(x, y, text.c_str(), scale, color);
+  return scale;
+}
+
+// Kopfzeile: Betriebsart links, Seitenpunkte rechts
+int displayHeader(int page, int pages) {
+  static const char *const names[] = {"NAT", "Bridge", "AP \xC2\xB7 NAT", "AP \xC2\xB7 Bridge"};
+  const bool big = displayBig();
+  const int w = gfx->width();
+  const int h = big ? 20 : 11;
+  gfx->fillRect(-2, -2, w + 4, h + 2, C_MODE);
+  const int step = big ? 9 : 6;
+  // grosse Schrift nur, wenn sie neben die Seitenpunkte passt
+  const String clock = clockText();
+  const int clockWidth = clock.isEmpty() ? 0 : Gfx::textWidth(clock.c_str()) + 6;
+  const int dotsWidth = pages > 1 ? pages * step + 4 : 0;
+  const int nameScale = big && 5 + Gfx::textWidth(names[bridgeMode], 2) + 6 + clockWidth + dotsWidth + 4 <= w ? 2 : 1;
+  gfx->text(big ? 5 : 3, big ? (nameScale == 2 ? 3 : 7) : 2, names[bridgeMode], nameScale, C_HEADTEXT);
+  if (!clock.isEmpty() && 3 + Gfx::textWidth(names[bridgeMode], nameScale) + 6 + clockWidth + dotsWidth <= w) {
+    gfx->text(w - dotsWidth - clockWidth - (big ? 2 : 0), big ? 7 : 2, clock.c_str(), 1, C_HEADTEXT);  // Uhrzeit (NTP)
+  }
+  for (int i = 0; i < pages && pages > 1; ++i) {  // bei fester Seite ohne Punkte
+    const int x = w - (big ? 8 : 4) - (pages - 1 - i) * step;
+    if (i == page) gfx->fillRect(x - (big ? 2 : 1), h / 2 - (big ? 2 : 1), big ? 5 : 3, big ? 5 : 3, C_HEADTEXT);
+    else gfx->fillRect(x, h / 2, big ? 2 : 1, big ? 2 : 1, C_HEADTEXT);
+  }
+  return h;
+}
+
+void displayWifiBars(int x, int y, int rssi, int scale) {
+  const int level = rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : rssi >= -85 ? 1 : 0;
+  for (int i = 0; i < 4; ++i) {
+    const int h = (3 + i * 3) * scale;
+    const int bx = x + i * 4 * scale;
+    const int by = y + 12 * scale - h;
+    if (i < level) gfx->fillRect(bx, by, 3 * scale, h, level <= 1 ? C_RED : C_GREEN);
+    else gfx->rect(bx, by, 3 * scale, h, C_GREY);
+  }
+}
+
+String displayUplinkIp() {
+  esp_netif_ip_info_t ip{};
+  if (ethernetNetif != nullptr && esp_netif_get_ip_info(ethernetNetif, &ip) == ESP_OK && ip.ip.addr != 0) return IPAddress(ip.ip.addr).toString();
+  return String();
+}
+
+// Seite "Webinterface": wo ist die Bridge erreichbar?
+void displayPageAccess(int top) {
+  const bool big = displayBig();
+  String main;
+  String extra;
+  switch (bridgeMode) {
+    case MODE_NAT:
+      main = wifiConnected ? WiFi.localIP().toString() : String("192.168.4.1");
+      extra = wifiConnected ? String(DT("oder 192.168.4.1 (Setup)", "or 192.168.4.1 (setup)")) : String(DT("im Setup-WLAN", "in the setup WiFi"));
+      break;
+    case MODE_BRIDGE:
+      main = "192.168.4.1";
+      extra = DT("im Setup-WLAN", "in the setup WiFi");
+      break;
+    case MODE_AP_NAT:
+      main = "192.168.4.1";
+      extra = displayUplinkIp();
+      if (!extra.isEmpty()) extra = String(DT("Heimnetz: ", "Home: ")) + extra;
+      break;
+    default:
+      main = displayUplinkIp();
+      if (main.isEmpty()) main = DT("wartet auf IP", "waiting for IP");
+      extra = DT("im Heimnetz", "in the home network");
+      break;
+  }
+  if (big) {
+    gfx->text(4, top + 6, DT("Webinterface", "Web interface"), 1, C_GREY);
+    displayFit(4, top + 18, main, 2, C_WHITE);
+    gfx->text(4, top + 38, extra.c_str(), 1, C_WHITE);
+    gfx->text(4, top + 52, BRIDGE_HOSTNAME, 1, C_GREY);
+    const String ssid = isApMode() || bridgeMode == MODE_BRIDGE ? apSsid : routerSsid;
+    gfx->text(4, top + 72, isApMode() ? DT("Eigenes WLAN", "Own WiFi") : (bridgeMode == MODE_BRIDGE ? DT("Setup-WLAN", "Setup WiFi") : DT("Router-WLAN", "Router WiFi")), 1, C_GREY);
+    displayFit(4, top + 84, ssid, 1, C_WHITE);
+    return;
+  }
+  gfx->text(0, 14, DT("Webinterface", "Web interface"), 1, C_WHITE);
+  const int scale = displayFit(0, 25, main, 2, C_WHITE);
+  gfx->text(0, scale == 2 ? 42 : 35, extra.c_str(), 1, C_WHITE);
+  gfx->text(0, 53, BRIDGE_HOSTNAME, 1, C_WHITE);
+}
+
+// Verlauf der Datenrate: Download als Flaeche, Upload als Linie
+void displayChart(int x, int y, int w, int h) {
+  uint32_t peak = 1;
+  for (int i = 0; i < DISPLAY_HISTORY; ++i) {
+    if (displayHistory[i][0] > peak) peak = displayHistory[i][0];
+    if (displayHistory[i][1] > peak) peak = displayHistory[i][1];
+  }
+  const int samples = w < DISPLAY_HISTORY ? w : DISPLAY_HISTORY;
+  for (int i = 0; i < samples; ++i) {
+    const uint32_t *value = displayHistory[(displayHistoryPos + DISPLAY_HISTORY - samples + i) % DISPLAY_HISTORY];
+    const int down = static_cast<int>(static_cast<uint64_t>(value[0]) * (h - 1) / peak);
+    const int up = static_cast<int>(static_cast<uint64_t>(value[1]) * (h - 1) / peak);
+    const int px = x + w - samples + i;
+    if (down > 0) gfx->fillRect(px, y + h - 1 - down, 1, down, C_DOWN);
+    if (gfx->isColor()) gfx->pixel(px, y + h - 1 - up, C_UP);
+  }
+  gfx->hline(x, y + h - 1, w, C_GREY, true);
+}
+
+// Seite "LAN": Kabel, Datenrate gross, Verlauf
+void displayPageLan(int top) {
+  const bool big = displayBig();
+  const bool ap = isApMode();
+  const int w = gfx->width();
+  const char *label = ap ? DT("Uplink (LAN-Port)", "Uplink (LAN port)") : DT("LAN-Port", "LAN port");
+  if (!ethernetLinkUp) {
+    gfx->text(big ? 4 : 0, big ? top + 8 : 14, label, 1, big ? C_GREY : C_WHITE);
+    displayFit(big ? 4 : 0, big ? top + 30 : 30, DT("kein Kabel", "no cable"), big ? 3 : 2, C_RED);
+    return;
+  }
+  char line[40];
+  snprintf(line, sizeof(line), "%s %d Mbit/s", ap ? "Uplink" : "LAN", ethernetSpeedMbit);
+  const uint32_t down = ap ? lanRxRate : lanTxRate;
+  const uint32_t up = ap ? lanTxRate : lanRxRate;
+  if (big) {
+    gfx->text(4, top + 6, line, 1, C_GREY);
+    int x = gfx->text(4, top + 18, "\xE2\x86\x93", 3, C_DOWN);
+    displayValue(x + 3, top + 18, displayRate(down), 3, C_DOWN);
+    x = gfx->text(4, top + 46, "\xE2\x86\x91", 2, C_UP);
+    displayValue(x + 3, top + 46, displayRate(up), 2, C_UP);
+    displayChart(4, top + 66, w - 8, gfx->height() - top - 68);
+    return;
+  }
+  gfx->text(0, 14, line, 1, C_WHITE);
+  const int x = gfx->text(0, 24, "\xE2\x86\x93", 2, C_DOWN);
+  displayValue(x + 2, 24, displayRate(down), 2, C_DOWN);
+  const String upText = String("\xE2\x86\x91 ") + displayRate(up);
+  gfx->text(0, 40, upText.c_str(), 1, C_UP);
+  displayChart(w - 60, 51, 60, 13);
+}
+
+// Seite "WLAN": Router-WLAN (Client-Modi) bzw. eigenes WLAN mit Geraeten (AP-Modi)
+void displayPageWifi(int top) {
+  const bool big = displayBig();
+  const int w = gfx->width();
+  const int x0 = big ? 4 : 0;
+  if (!isApMode()) {
+    gfx->text(x0, big ? top + 6 : 14, DT("Router-WLAN", "Router WiFi"), 1, big ? C_GREY : C_WHITE);
+    const String ssid = routerSsid.isEmpty() ? String(DT("nicht eingerichtet", "not set up")) : routerSsid;
+    if (big) displayFit(x0, top + 18, ssid, 2, C_WHITE);
+    else gfx->text(0, 25, ssid.c_str(), 1, C_WHITE);
+    if (wifiConnected) {
+      const int rssi = WiFi.RSSI();
+      char text[16];
+      snprintf(text, sizeof(text), "%d dBm", rssi);
+      if (big) {
+        displayValue(x0, top + 46, String(text), 3, C_WHITE);
+        displayWifiBars(w - 36, top + 44, rssi, 2);
+        gfx->text(x0, top + 80, DT("verbunden", "connected"), 1, C_GREEN);
+      } else {
+        gfx->text(0, 38, text, 2, C_WHITE);
+        displayWifiBars(w - 18, 39, rssi, 1);
+      }
+    } else {
+      gfx->text(x0, big ? top + 50 : 40, DT("nicht verbunden", "not connected"), big ? 2 : 1, C_RED);
+    }
+    return;
+  }
+  const String title = String("WLAN ") + apSsid;
+  gfx->text(x0, big ? top + 6 : 14, title.c_str(), 1, big ? C_GREY : C_WHITE);
+  const int count = WiFi.softAPgetStationNum();
+  char number[8];
+  snprintf(number, sizeof(number), "%d", count);
+  const int scale = big ? 3 : 2;
+  const int x = gfx->text(x0, big ? top + 18 : 25, number, scale, count ? C_GREEN : C_WHITE);
+  gfx->text(x + 4, big ? top + 32 : 31, count == 1 ? DT("Gerät", "device") : DT("Geräte", "devices"), 1, C_WHITE);
+  // Geraetenamen (klein: 2, gross: 4)
+  wifi_sta_list_t list{};
+  if (count > 0 && esp_wifi_ap_get_sta_list(&list) == ESP_OK) {
+    int y = big ? top + 48 : 43;
+    const int maxNames = big ? 4 : 2;
+    for (int i = 0; i < list.num && i < maxNames; ++i) {
+      ClientInfo info{};
+      portENTER_CRITICAL(&clientInfoLock);
+      ClientInfo *slot = clientInfoSlot(list.sta[i].mac, false);
+      if (slot != nullptr) info = *slot;
+      portEXIT_CRITICAL(&clientInfoLock);
+      const String name = info.name[0] ? String(info.name) : macToString(list.sta[i].mac);
+      if (big) gfx->fillRect(x0, y + 2, 3, 3, C_GREEN);
+      gfx->text(big ? x0 + 7 : 0, y, name.c_str(), 1, C_WHITE);
+      y += big ? 13 : 10;
+    }
+  }
+}
+
+// Kurzer Hinweis bei Ereignissen (4 s)
+String displayNotifyTitle;
+String displayNotifyText;
+uint8_t displayNotifyColor = C_WHITE;
+uint32_t displayNotifyUntil = 0;
+
+void displayNotify(const String &title, const String &text, uint8_t color) {
+  displayNotifyTitle = title;
+  displayNotifyText = text;
+  displayNotifyColor = color;
+  displayNotifyUntil = millis() + 4000;
+  if (displayNotifyUntil == 0) displayNotifyUntil = 1;
+}
+
+void displayDrawNotify() {
+  const bool big = displayBig();
+  const int w = gfx->width();
+  gfx->setOffset(0, 0);
+  gfx->clear();
+  if (!gfx->isColor()) gfx->setOffset(static_cast<int>(millis() / 60000 % 3), 0);
+  const int top = displayHeader(0, 1);
+  const int y0 = big ? top + 12 : (gfx->height() >= 80 ? 22 : 16);
+  gfx->fillRect(big ? 4 : 0, y0, big ? 4 : 3, big ? 54 : 34, displayNotifyColor);  // Farbbalken links
+  const int x = big ? 14 : 7;
+  gfx->setOffset(0, gfx->isColor() && !big ? (gfx->height() - 64) / 2 - 6 : 0);
+  const int scale = Gfx::textWidth(displayNotifyTitle.c_str(), 2) <= w - x - 2 ? 2 : 1;
+  gfx->text(x, y0 + 2, displayNotifyTitle.c_str(), scale, displayNotifyColor);
+  displayFit(x, y0 + (big ? 26 : 22), displayNotifyText, big ? 2 : 1, C_WHITE);
+}
+
+// ---------------------------------------------------------------------------
+// Uhrzeit (NTP), Nachtmodus, Taster, Tagesstatistik, WLAN-QR-Code
+// ---------------------------------------------------------------------------
+
+constexpr int BUTTON_PIN = 36;  // Taster gegen GND, 10 kOhm Pull-up nach 3V3 (IO36 hat keinen internen)
+const char *const TZ_NAMES[] = {"Europa/Berlin (MEZ/MESZ)", "Europa/London (GMT/BST)", "UTC", "USA Ost (EST/EDT)"};
+const char *const TZ_RULES[] = {"CET-1CEST,M3.5.0,M10.5.0/3", "GMT0BST,M3.5.0/1,M10.5.0", "UTC0", "EST5EDT,M3.2.0,M11.1.0"};
+constexpr int TZ_COUNT = 4;
+uint8_t timeZone = 0;
+bool nightOn = false;
+uint16_t nightFrom = 22 * 60;   // Minuten ab Mitternacht
+uint16_t nightTo = 7 * 60;
+uint8_t nightAction = 0;        // 0 = Display aus, 1 = abdunkeln
+uint32_t nightOverrideUntil = 0;  // Taster/Webinterface: Nachtmodus kurz aufheben
+bool buttonEnabled = false;
+bool displayQr = false;         // WLAN-QR-Code im Seitenwechsel
+int displayManualPage = -1;     // per Taster gewaehlte Seite ...
+uint32_t displayManualUntil = 0;  // ... bis zu diesem Zeitpunkt
+QrCode displayQrCode;
+String displayQrSource;         // Text, fuer den der QR-Code erzeugt wurde
+// Tagesstatistik
+uint64_t dayRxBase = 0, dayTxBase = 0;
+uint32_t dayPeakDown = 0, dayPeakUp = 0;
+int dayMaxStations = 0;
+int dayKey = -1;                // Tag im Jahr der Statistik (-1 = seit Start)
+bool dayFromMidnight = false;
+
+bool timeValid() { return time(nullptr) > 1700000000; }
+
+void timeBegin() {
+  timeZone = preferences.getUChar("tz", 0);
+  if (timeZone >= TZ_COUNT) timeZone = 0;
+  nightOn = preferences.getBool("night_on", false);
+  nightFrom = preferences.getUShort("night_from", 22 * 60);
+  nightTo = preferences.getUShort("night_to", 7 * 60);
+  nightAction = preferences.getUChar("night_act", 0);
+  buttonEnabled = preferences.getBool("btn_on", false);
+  displayQr = preferences.getBool("disp_qr", false);
+  if (buttonEnabled) pinMode(BUTTON_PIN, INPUT);
+}
+
+// am Ende von setup(), wenn der Netzwerk-Stack laeuft: Uhrzeit per NTP holen (sobald Internet da ist)
+void timeStart() {
+  configTzTime(TZ_RULES[timeZone], "pool.ntp.org", "time.cloudflare.com");
+}
+
+String clockText() {
+  if (!timeValid()) return String();
+  const time_t t = time(nullptr);
+  struct tm local;
+  localtime_r(&t, &local);
+  char text[8];
+  snprintf(text, sizeof(text), "%02d:%02d", local.tm_hour, local.tm_min);
+  return String(text);
+}
+
+bool displayNightActive() {
+  if (!nightOn || !timeValid() || static_cast<int32_t>(millis() - nightOverrideUntil) < 0) return false;
+  const time_t t = time(nullptr);
+  struct tm local;
+  localtime_r(&t, &local);
+  const int minutes = local.tm_hour * 60 + local.tm_min;
+  return nightFrom <= nightTo ? (minutes >= nightFrom && minutes < nightTo) : (minutes >= nightFrom || minutes < nightTo);
+}
+
+// einmal pro Sekunde: Datenmenge, Spitzenwerte und Geraete seit Mitternacht (bzw. seit dem Start)
+void displayStatsTick(int stations) {
+  if (timeValid()) {
+    const time_t t = time(nullptr);
+    struct tm local;
+    localtime_r(&t, &local);
+    if (local.tm_yday != dayKey) {
+      const bool midnight = dayKey >= 0;  // Tageswechsel erlebt (nicht nur erste Zeitsynchronisation)
+      dayKey = local.tm_yday;
+      if (midnight) {
+        dayRxBase = lanRxTotal;
+        dayTxBase = lanTxTotal;
+        dayPeakDown = dayPeakUp = 0;
+        dayMaxStations = 0;
+        dayFromMidnight = true;
+      }
+    }
+  }
+  const uint32_t down = isApMode() ? lanRxRate : lanTxRate;
+  const uint32_t up = isApMode() ? lanTxRate : lanRxRate;
+  if (down > dayPeakDown) dayPeakDown = down;
+  if (up > dayPeakUp) dayPeakUp = up;
+  if (stations > dayMaxStations) dayMaxStations = stations;
+}
+
+String displayBytes(uint64_t bytes) {
+  char text[16];
+  const char comma = displayEnglish ? '.' : ',';
+  if (bytes >= 1000000000ULL) snprintf(text, sizeof(text), "%lu%c%02lu GB", static_cast<unsigned long>(bytes / 1000000000ULL), comma, static_cast<unsigned long>(bytes % 1000000000ULL / 10000000ULL));
+  else if (bytes >= 1000000ULL) snprintf(text, sizeof(text), "%lu MB", static_cast<unsigned long>(bytes / 1000000ULL));
+  else snprintf(text, sizeof(text), "%lu KB", static_cast<unsigned long>(bytes / 1000ULL));
+  return String(text);
+}
+
+// Seite "Heute": Datenmenge und Spitzenwerte
+void displayPageToday(int top) {
+  const bool big = displayBig();
+  const bool ap = isApMode();
+  const uint64_t down = ap ? lanRxTotal - dayRxBase : lanTxTotal - dayTxBase;
+  const uint64_t up = ap ? lanTxTotal - dayTxBase : lanRxTotal - dayRxBase;
+  const char *title = dayFromMidnight ? DT("Heute seit 0:00", "Today since 0:00") : DT("Seit dem Start", "Since start");
+  const int x0 = big ? 4 : 0;
+  gfx->text(x0, big ? top + 6 : 14, title, 1, big ? C_GREY : C_WHITE);
+  int x = gfx->text(x0, big ? top + 18 : 24, "\xE2\x86\x93", 2, C_DOWN);
+  displayValue(x + 3, big ? top + 18 : 24, displayBytes(down), 2, C_DOWN);
+  const String upText = String("\xE2\x86\x91 ") + displayBytes(up);
+  gfx->text(x0, big ? top + 38 : 40, upText.c_str(), big ? 2 : 1, C_UP);
+  char text[48];
+  const String peakDown = displayRate(dayPeakDown);
+  snprintf(text, sizeof(text), "%s %s", DT("Spitze", "Peak"), peakDown.c_str());
+  if (big) {
+    gfx->text(x0, top + 62, text, 1, C_WHITE);
+    snprintf(text, sizeof(text), "%s %s", DT("Spitze Upload", "Peak upload"), displayRate(dayPeakUp).c_str());
+    gfx->text(x0, top + 76, text, 1, C_GREY);
+    if (ap) {
+      snprintf(text, sizeof(text), "%s %d", DT("Max. WLAN-Geräte", "Max. WiFi devices"), dayMaxStations);
+      gfx->text(x0, top + 90, text, 1, C_GREY);
+    }
+  } else {
+    if (ap) snprintf(text, sizeof(text), "%s %s \xC2\xB7 max %d", DT("Spitze", "Peak"), peakDown.c_str(), dayMaxStations);
+    gfx->text(0, 52, text, 1, C_WHITE);
+  }
+}
+
+// WLAN-Zugangsdaten als QR-Text (Sonderzeichen mit \ maskiert)
+String wifiQrText() {
+  auto escape = [](const String &value) {
+    String out;
+    for (size_t i = 0; i < value.length(); ++i) {
+      const char c = value[i];
+      if (c == '\\' || c == ';' || c == ',' || c == '"' || c == ':') out += '\\';
+      out += c;
+    }
+    return out;
+  };
+  if (setupApPassword.isEmpty()) return String("WIFI:T:nopass;S:") + escape(apSsid) + ";;";
+  return String("WIFI:T:WPA;S:") + escape(apSsid) + ";P:" + escape(setupApPassword) + ";;";
+}
+
+// Seite "QR-Code": Handy-Kamera darauf richten und mit dem WLAN verbinden
+void displayPageQr() {
+  const String source = wifiQrText();
+  if (source != displayQrSource) {  // nur neu berechnen, wenn sich Name/Passwort geaendert haben
+    displayQrSource = source;
+    if (!displayQrCode.encode(source.c_str())) displayQrSource = "";
+  }
+  const int w = gfx->width();
+  const int h = gfx->height();
+  gfx->setOffset(0, 0);
+  if (displayQrSource.isEmpty()) {
+    gfx->text(2, 20, DT("Name/Passwort zu lang", "Name/password too long"), 1, C_WHITE);
+    return;
+  }
+  const int modules = displayQrCode.size() + 2;  // + 1 Modul heller Rand je Seite
+  int scale = h / modules;
+  if (scale < 1) scale = 1;
+  // lieber etwas kleiner, wenn dafuer der WLAN-Name daneben passt (ab 3 Pixel pro Modul gut lesbar)
+  while (scale > 3 && w - modules * scale < 46 && w - modules * (scale - 1) >= 46) --scale;
+  const int qrPixels = modules * scale;
+  const bool text = w - qrPixels >= 46;
+  const int left = text ? 0 : (w - qrPixels) / 2;
+  const int topY = (h - qrPixels) / 2;
+  gfx->fillRect(left, topY, qrPixels, qrPixels, C_WHITE);  // heller Hintergrund, dunkle Module
+  for (int y = 0; y < displayQrCode.size(); ++y)
+    for (int x = 0; x < displayQrCode.size(); ++x)
+      if (displayQrCode.module(x, y)) gfx->fillRect(left + (x + 1) * scale, topY + (y + 1) * scale, scale, scale, C_BLACK);
+  if (!text) return;
+  const int tx = qrPixels + 4;
+  const bool big = displayBig();
+  gfx->text(tx, big ? 8 : 2, isApMode() ? "WLAN" : DT("Setup-WLAN", "Setup WiFi"), 1, C_GREY);
+  // WLAN-Name umbrechen (Platz rechts neben dem Code)
+  String name = apSsid;
+  int y = big ? 22 : 14;
+  while (!name.isEmpty() && y < h - 20) {
+    int n = name.length();
+    while (n > 1 && Gfx::textWidth(name.substring(0, n).c_str()) > w - tx - 1) --n;
+    gfx->text(tx, y, name.substring(0, n).c_str(), 1, C_WHITE);
+    name = name.substring(n);
+    y += 10;
+  }
+  gfx->text(tx, h - (big ? 22 : 18), DT("Kamera", "Scan to"), 1, C_GREEN);
+  gfx->text(tx, h - (big ? 12 : 9), DT("scannen", "connect"), 1, C_GREEN);
+}
+
+// Taster: kurz = naechste Seite (30 s), lang = Display an/aus. Weckt das Display und hebt den Nachtmodus auf.
+void displayNextPage(const int *list, int count);
+void buttonLoop() {
+  if (!buttonEnabled || gfx == nullptr) return;
+  static bool pressed = false;
+  static bool longDone = false;
+  static uint32_t changedMs = 0;
+  static bool lastRaw = false;
+  const bool raw = digitalRead(BUTTON_PIN) == LOW;
+  const uint32_t now = millis();
+  if (raw != lastRaw) { lastRaw = raw; changedMs = now; }
+  if (now - changedMs < 30) return;  // entprellen
+  if (raw && !pressed) { pressed = true; longDone = false; return; }
+  if (raw && pressed && !longDone && now - changedMs >= 1200) {  // lange gedrueckt
+    longDone = true;
+    displayOn = !displayOn;
+    preferences.putBool("disp_on", displayOn);
+    if (displayOn) displayWake();
+    Serial.printf("Taster: Display %s\n", displayOn ? "an" : "aus");
+  }
+  if (!raw && pressed) {
+    pressed = false;
+    if (longDone) return;
+    displayWake();
+    nightOverrideUntil = now + 30000;
+    if (nightOverrideUntil == 0) nightOverrideUntil = 1;
+    if (!displayOn) {
+      displayOn = true;
+      preferences.putBool("disp_on", true);
+      return;
+    }
+    displayManualPage = displayManualPage < 0 ? 0 : displayManualPage + 1;  // Index wird in displayLoop begrenzt
+    displayManualUntil = now + 30000;
+    if (displayManualUntil == 0) displayManualUntil = 1;
+    displayNotifyUntil = 0;
+  }
+}
+
+// Balken 0-100 %: gruen, ab 60 % orange, ab 85 % rot
+void displayBar(int x, int y, int w, int h, float percent) {
+  gfx->rect(x, y, w, h, C_GREY);
+  if (percent < 0) return;
+  const int fill = static_cast<int>((w - 2) * (percent > 100 ? 100 : percent) / 100.0f + 0.5f);
+  if (fill > 0) gfx->fillRect(x + 1, y + 1, fill, h - 2, percent >= 85 ? C_RED : percent >= 60 ? C_UP : C_GREEN);
+}
+
+// Seite "System": CPU je Kern, RAM, Laufzeit, Versorgung
+void displayPageSystem(int top) {
+  const bool big = displayBig();
+  const int w = gfx->width();
+  const uint32_t heapSize = ESP.getHeapSize();
+  const uint32_t heapFree = ESP.getFreeHeap();
+  const float ram = heapSize ? 100.0f * (heapSize - heapFree) / heapSize : -1;
+  const float values[3] = {cpuLoad[0], cpuLoad[1], ram};
+  const char *labels[3] = {big ? "CPU 0" : "CPU0", big ? "CPU 1" : "CPU1", "RAM"};
+  char text[40];
+  const int x0 = big ? 4 : 0;
+  const int right = w - (big ? 4 : 3);           // rechter Rand (OLED: Platz fuer den Einbrennschutz)
+  const int barX = big ? 44 : 27;
+  const int barW = right - barX - (big ? 30 : 24);
+  const int step = big ? 16 : 10;
+  for (int i = 0; i < 3; ++i) {
+    const int y = (big ? top + 6 : 14) + i * step;
+    gfx->text(x0, y + (big ? 2 : 0), labels[i], 1, big ? C_GREY : C_WHITE);
+    displayBar(barX, y, barW, big ? 11 : 7, values[i]);
+    if (values[i] >= 0) snprintf(text, sizeof(text), "%d%%", static_cast<int>(values[i] + 0.5f));
+    else snprintf(text, sizeof(text), "-");
+    gfx->text(right - Gfx::textWidth(text), y + (big ? 2 : 0), text, 1, C_WHITE);
+  }
+  const float volts = supplyVoltage();
+  const uint32_t freeKb = heapFree / 1024;
+  if (big) {
+    int y = top + 6 + 3 * step + 4;
+    snprintf(text, sizeof(text), "%s %lu KB, min %lu KB", DT("RAM frei", "RAM free"), static_cast<unsigned long>(freeKb), static_cast<unsigned long>(ESP.getMinFreeHeap() / 1024));
+    if (Gfx::textWidth(text) > w - 2 * x0) snprintf(text, sizeof(text), "%s %lu KB", DT("RAM frei", "RAM free"), static_cast<unsigned long>(freeKb));
+    gfx->text(x0, y, text, 1, C_GREY);
+    snprintf(text, sizeof(text), "%s %s", DT("Laufzeit", "Uptime"), uptimeText().c_str());
+    gfx->text(x0, y + 14, text, 1, C_WHITE);
+    if (volts > 0) {
+      snprintf(text, sizeof(text), "%s %.2f V", DT("Versorgung", "Supply"), volts);
+      gfx->text(x0, y + 28, text, 1, volts < 4.6f ? C_RED : C_GREEN);
+    } else {
+      snprintf(text, sizeof(text), "%s, %lu MHz", ESP.getChipModel(), static_cast<unsigned long>(ESP.getCpuFreqMHz()));
+      gfx->text(x0, y + 28, text, 1, C_GREY);
+    }
+    return;
+  }
+  snprintf(text, sizeof(text), "%s %lu KB", DT("RAM frei", "RAM free"), static_cast<unsigned long>(freeKb));
+  gfx->text(0, 44, text, 1, C_WHITE);
+  if (volts > 0) snprintf(text, sizeof(text), "%s \xC2\xB7 %.2f V", uptimeText().c_str(), volts);
+  else snprintf(text, sizeof(text), "%s %s", DT("Laufzeit", "Up"), uptimeText().c_str());
+  gfx->text(0, 54, text, 1, volts > 0 && volts < 4.6f ? C_RED : C_WHITE);
+}
+
+// Warnseite, solange etwas nicht stimmt (leerer Text = alles in Ordnung)
+String displayProblem() {
+  if (!ethernetLinkUp) return isApMode() ? DT("Kein Kabel zum Router", "No cable to router") : DT("Kein Kabel am LAN-Port", "No cable on LAN port");
+  if (!isApMode() && !routerSsid.isEmpty() && !wifiConnected) return DT("Router-WLAN getrennt", "Router WiFi down");
+  if (!isApMode() && routerSsid.isEmpty()) return DT("Router-WLAN einrichten", "Set up router WiFi");
+  if (isApMode() && displayUplinkIp().isEmpty()) return DT("Keine IP vom Router", "No IP from router");
+  return String();
+}
+
+void displayLoop() {
+  if (gfx == nullptr) return;
+  static uint32_t lastMs = 0;
+  static bool powered = true;
+  static bool bright = true;
+  static bool lastLink = false;
+  static bool lastWifi = false;
+  static int lastStations = -1;
+  const uint32_t now = millis();
+  if (now - lastMs < 1000) return;
+  lastMs = now;
+
+  displayHistory[displayHistoryPos][0] = isApMode() ? lanRxRate : lanTxRate;
+  displayHistory[displayHistoryPos][1] = isApMode() ? lanTxRate : lanRxRate;
+  displayHistoryPos = (displayHistoryPos + 1) % DISPLAY_HISTORY;
+  displayStatsTick(isApMode() ? WiFi.softAPgetStationNum() : 0);
+
+  const bool night = displayNightActive();
+  if (!displayOn || (night && nightAction == 0)) {  // aus bzw. Nachtmodus "aus"
+    if (powered) { gfx->power(false); powered = false; }
+    return;
+  }
+  if (!powered) { gfx->power(true); powered = true; displayWake(); }
+
+  // Ereignisse wecken das Display: Kabel, Router-WLAN, WLAN-Geraete
+  const int stations = isApMode() ? WiFi.softAPgetStationNum() : 0;
+  if (ethernetLinkUp != lastLink || wifiConnected != lastWifi || stations != lastStations) displayWake();
+  // Ereignis-Hinweise (nicht beim ersten Durchlauf)
+  if (displayEvents && lastStations >= 0) {
+    if (stations > lastStations) {
+      // zuletzt angemeldetes Geraet suchen
+      String name;
+      uint32_t newest = 0;
+      portENTER_CRITICAL(&clientInfoLock);
+      for (const ClientInfo &info : clientInfos) {
+        if (info.used && info.connectedMs != 0 && info.connectedMs >= newest) {
+          newest = info.connectedMs;
+          name = info.name[0] ? String(info.name) : macToString(info.mac);
+        }
+      }
+      portEXIT_CRITICAL(&clientInfoLock);
+      displayNotify(DT("Neues Gerät", "New device"), name, C_GREEN);
+    } else if (stations < lastStations) {
+      displayNotify(DT("Gerät getrennt", "Device left"), String(stations) + DT(" verbunden", " connected"), C_UP);
+    }
+    if (ethernetLinkUp != lastLink) {
+      if (ethernetLinkUp) displayNotify(DT("Kabel verbunden", "Cable connected"), String(ethernetSpeedMbit) + " Mbit/s", C_GREEN);
+      else displayNotify(DT("Kabel getrennt", "Cable unplugged"), isApMode() ? DT("Uplink zum Router", "uplink to router") : DT("LAN-Port", "LAN port"), C_RED);
+    }
+    if (!isApMode() && wifiConnected != lastWifi) {
+      if (wifiConnected) displayNotify(DT("Router-WLAN", "Router WiFi"), DT("verbunden", "connected"), C_GREEN);
+      else displayNotify(DT("Router-WLAN", "Router WiFi"), DT("getrennt", "disconnected"), C_RED);
+    }
+  }
+  lastLink = ethernetLinkUp;
+  lastWifi = wifiConnected;
+  lastStations = stations;
+  const bool shouldBeBright = !night && (!displayDim || now - displayWakeMs < DISPLAY_BRIGHT_MS);
+  if (shouldBeBright != bright) { gfx->dim(!shouldBeBright); bright = shouldBeBright; }
+
+  // TFT: alle 30 s die wichtigsten Register erneut setzen (falls eine Stoerung das Display verstellt hat)
+  static uint32_t lastKeepAlive = 0;
+  if (gfx == &tftDev && now - lastKeepAlive >= 30000) {
+    lastKeepAlive = now;
+    tftDev.keepAlive();
+  }
+
+  const String problem = displayProblem();
+  if (displayNotifyUntil != 0 && static_cast<int32_t>(now - displayNotifyUntil) < 0) {
+    displayDrawNotify();
+    gfx->show();
+    return;
+  }
+  displayNotifyUntil = 0;
+  // Seite waehlen: wechselnd oder fest. Eine Warnseite erscheint auch bei fester Seite (im Wechsel mit ihr).
+  // Seiten: 0 Webinterface, 1 LAN, 2 WLAN, 3 System, 4 Heute, 5 QR-Code, 6 Warnung
+  const uint32_t slot = now / (static_cast<uint32_t>(displayInterval) * 1000);
+  int list[8];
+  int count = 0;
+  if (displayPageMode == 0) {
+    for (int p = 0; p <= 4; ++p) list[count++] = p;
+    if (displayQr) list[count++] = 5;
+  } else {
+    list[count++] = displayPageMode - 1;
+  }
+  if (!problem.isEmpty()) list[count++] = 6;
+  int dot;
+  if (displayManualPage >= 0 && static_cast<int32_t>(now - displayManualUntil) < 0) {
+    // per Taster gewaehlt: alle Seiten (inkl. QR-Code) durchblaettern
+    int all[8];
+    int allCount = 0;
+    for (int p = 0; p <= 5; ++p) all[allCount++] = p;
+    displayManualPage %= allCount;
+    list[0] = all[displayManualPage];
+    count = 1;
+    dot = 0;
+  } else {
+    displayManualPage = -1;
+    dot = static_cast<int>(slot % count);
+  }
+  const int page = list[dot];
+  const int pages = count;
+  const bool big = displayBig();
+  if (gfx->isColor()) tftDev.setPalette(displayModeColor());
+  gfx->setOffset(0, 0);
+  gfx->clear();
+  const uint32_t minute = now / 60000;
+  if (!gfx->isColor()) gfx->setOffset(static_cast<int>(minute % 3), static_cast<int>((minute / 3) % 2));  // OLED-Einbrennschutz: 0-2 Pixel
+  if (page == 5) {  // QR-Code: ganze Flaeche, ohne Kopfzeile
+    displayPageQr();
+    gfx->show();
+    return;
+  }
+  const int top = displayHeader(dot, pages);
+  if (gfx->isColor() && !big) gfx->setOffset(0, (gfx->height() - 64) / 2);  // kleines TFT (160x80): Inhalt unter dem Kopf mittig
+  if (page == 0) displayPageAccess(top);
+  else if (page == 1) displayPageLan(top);
+  else if (page == 2) displayPageWifi(top);
+  else if (page == 3) displayPageSystem(top);
+  else if (page == 4) displayPageToday(top);
+  else if (big) {
+    displayFit(4, top + 10, String(DT("Achtung", "Warning")), 3, C_RED);
+    displayFit(4, top + 42, problem, 2, C_WHITE);
+    gfx->text(4, top + 70, DT("Mehr im Webinterface", "More in web interface"), 1, C_GREY);
+  } else {
+    gfx->text(0, 16, DT("Achtung", "Warning"), 2, C_RED);
+    gfx->text(0, 36, problem.c_str(), 1, C_WHITE);
+    gfx->text(0, 50, DT("Mehr im Webinterface", "More in web interface"), 1, C_WHITE);
+  }
+  gfx->show();
+}
+
+// Regler im Webinterface: Helligkeit sofort anzeigen (save=1 beim Loslassen speichert sie auch)
+void setDisplayBrightness() {
+  displayBrightness = static_cast<uint8_t>(constrain(webServer.arg("v").toInt(), 10L, 100L));
+  if (gfx != nullptr) {
+    displayWake();
+    gfx->dim(false);
+    gfx->setBrightness(displayBrightness);
+  }
+  if (webServer.arg("save") == "1") preferences.putUChar("disp_bri", displayBrightness);
+  webServer.send(204, "text/plain", "");
+}
+
+void saveDisplay() {
+  detectLanguage();
+  const uint8_t newType = static_cast<uint8_t>(webServer.arg("disp_type").toInt());
+  const bool newFlip = webServer.arg("disp_flip") == "1";
+  displayOn = webServer.arg("disp_on") == "1";
+  displayDim = webServer.arg("disp_dim") == "1";
+  displayEvents = webServer.arg("disp_evt") == "1";
+  preferences.putBool("disp_evt", displayEvents);
+  displayBrightness = static_cast<uint8_t>(constrain(webServer.arg("disp_bri").toInt(), 10L, 100L));
+  displayPageMode = static_cast<uint8_t>(constrain(webServer.arg("disp_page").toInt(), 0L, 6L));
+  displayQr = webServer.arg("disp_qr") == "1";
+  preferences.putBool("disp_qr", displayQr);
+  // Uhrzeit, Nachtmodus, Taster
+  auto minutesOf = [](const String &text, uint16_t fallback) -> uint16_t {
+    const int colon = text.indexOf(':');
+    if (colon < 1) return fallback;
+    const long hours = text.substring(0, colon).toInt();
+    const long minutes = text.substring(colon + 1).toInt();
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return fallback;
+    return static_cast<uint16_t>(hours * 60 + minutes);
+  };
+  const uint8_t newZone = static_cast<uint8_t>(constrain(webServer.arg("tz").toInt(), 0L, static_cast<long>(TZ_COUNT - 1)));
+  if (newZone != timeZone) {
+    timeZone = newZone;
+    setenv("TZ", TZ_RULES[timeZone], 1);
+    tzset();
+  }
+  nightOn = webServer.arg("night_on") == "1";
+  nightFrom = minutesOf(webServer.arg("night_from"), nightFrom);
+  nightTo = minutesOf(webServer.arg("night_to"), nightTo);
+  nightAction = webServer.arg("night_act") == "1" ? 1 : 0;
+  const bool newButton = webServer.arg("btn_on") == "1";
+  if (newButton && !buttonEnabled) pinMode(BUTTON_PIN, INPUT);
+  buttonEnabled = newButton;
+  preferences.putUChar("tz", timeZone);
+  preferences.putBool("night_on", nightOn);
+  preferences.putUShort("night_from", nightFrom);
+  preferences.putUShort("night_to", nightTo);
+  preferences.putUChar("night_act", nightAction);
+  preferences.putBool("btn_on", buttonEnabled);
+  displayInterval = static_cast<uint8_t>(constrain(webServer.arg("disp_int").toInt(), 2L, 60L));
+  preferences.putUChar("disp_page", displayPageMode);
+  preferences.putUChar("disp_int", displayInterval);
+  preferences.putUChar("disp_bri", displayBrightness);
+  if (gfx != nullptr) gfx->setBrightness(displayBrightness);
+  preferences.putBool("disp_on", displayOn);
+  preferences.putBool("disp_dim", displayDim);
+  bool restart = newType != displayType;
+  if (displayIsTft(newType)) {
+    const uint8_t offX = static_cast<uint8_t>(constrain(webServer.arg("tft_offx").toInt(), 0L, 40L));
+    const uint8_t offY = static_cast<uint8_t>(constrain(webServer.arg("tft_offy").toInt(), 0L, 40L));
+    const bool bgr = webServer.arg("tft_bgr") == "1";
+    const bool inv = webServer.arg("tft_inv") == "1";
+    preferences.putUChar("tft_offx", offX);
+    preferences.putUChar("tft_offy", offY);
+    preferences.putBool("tft_bgr", bgr);
+    preferences.putBool("tft_inv", inv);
+    const bool backlight = webServer.arg("tft_bl") == "1";
+    if (backlight != tftBacklightPin) restart = true;  // PWM-Pin wird nur beim Start eingerichtet
+    preferences.putBool("tft_bl", backlight);
+    // gleicher TFT-Typ: Drehung, Versatz und Farben sofort uebernehmen (ohne Neustart)
+    if (!restart && gfx == &tftDev) {
+      tftSettings.offsetX = offX;
+      tftSettings.offsetY = offY;
+      tftSettings.bgr = bgr;
+      tftSettings.invert = inv;
+      tftSettings.rotate180 = newFlip;
+      tftDev.reconfigure(tftSettings);
+    }
+  } else if (newFlip != displayFlip && gfx == &oledDev) {
+    oledDev.rotate180(newFlip);
+  }
+  displayFlip = newFlip;
+  preferences.putBool("disp_flip", displayFlip);
+  preferences.putUChar("disp_type", newType <= DISP_TFT_160X80 ? newType : DISP_OLED);
+  displayWake();
+  if (!restart) {
+    webServer.sendHeader("Location", "/#display");
+    webServer.send(303, "text/plain", "");
+    return;
+  }
+  webServer.send(200, "text/html; charset=utf-8", pageHeader(T("Neustart", "Restart")) + "<h1>" + T("Display gespeichert", "Display saved") + "</h1><p>" +
+    T("Die Bridge startet neu, damit das Display mit den neuen Einstellungen initialisiert wird.", "The bridge restarts so the display is initialized with the new settings.") +
+    "</p><p><a href='/#display'>" + T("Zur&uuml;ck zur Startseite", "Back to the start page") + "</a></p>" + pageFooter());
+  restartAtMs = millis() + 1500;
+}
+
+String dispOption(uint8_t current, uint8_t value, const char *label) {
+  return String("<option value='") + String(value) + "'" + (current == value ? " selected" : "") + ">" + label + "</option>";
+}
+
+String displayStatusPill() {
+  if (displayType == DISP_NONE) return pill("", T("aus", "off"));
+  if (gfx == nullptr) return pill("", T("nicht erkannt", "not detected"));
+  return displayOn ? pill("ok", gfx->isColor() ? "TFT" : "OLED") : pill("", T("aus", "off"));
+}
+
+String timeInputValue(uint16_t minutes) {
+  char text[8];
+  snprintf(text, sizeof(text), "%02u:%02u", minutes / 60, minutes % 60);
+  return String(text);
+}
+
+String dispSwitch(const char *name, bool checked, const char *title, const char *hint);
+
+// Gruppen "Uhrzeit & Nachtmodus" und "Taster"
+String displayTimeGroupHtml() {
+  const String clock = clockText();
+  String html = String("<div class='dgrp'><h3 class='fwh'>") + fwIcon(SEC_ICON_DIM) + T("Uhrzeit &amp; Nachtmodus", "Time &amp; night mode") + "</h3>"
+    "<p class='dclock'>" + (clock.isEmpty()
+      ? String(T("Uhrzeit noch nicht bekannt &ndash; sie kommt per Internet (NTP), sobald die Bridge online ist.", "Time not known yet &ndash; it comes via the internet (NTP) once the bridge is online.")) +
+        (bridgeMode == MODE_BRIDGE ? T(" Im Bridge-Modus hat die Bridge keine eigene IP und bekommt deshalb keine Uhrzeit.", " In bridge mode the bridge has no IP of its own and therefore gets no time.") : "")
+      : String(T("Aktuelle Uhrzeit: ", "Current time: ")) + "<b>" + clock + "</b> " + T("(per Internet, wird auch in der Kopfzeile angezeigt)", "(via the internet, also shown in the header)")) + "</p>"
+    "<label>" + T("Zeitzone", "Time zone") + "<select name='tz'>";
+  for (int i = 0; i < TZ_COUNT; ++i) html += dispOption(timeZone, static_cast<uint8_t>(i), TZ_NAMES[i]);
+  html += String("</select></label>") +
+    dispSwitch("night_on", nightOn, T("Nachtmodus", "Night mode"), T("Display zu festen Zeiten aus oder dunkel", "display off or dark at fixed times")) +
+    "<div class='dnight'><label>" + T("von", "from") + "<input type='time' name='night_from' value='" + timeInputValue(nightFrom) + "'></label>"
+    "<label>" + T("bis", "until") + "<input type='time' name='night_to' value='" + timeInputValue(nightTo) + "'></label>"
+    "<label>" + T("Display", "Display") + "<select name='night_act'>" + dispOption(nightAction, 0, T("aus", "off")) + dispOption(nightAction, 1, T("abdunkeln", "dimmed")) + "</select></label></div>"
+    "</div><div class='dgrp'><h3 class='fwh'>" + fwIcon(SEC_ICON_MODE) + T("Taster", "Button") + "</h3>" +
+    dispSwitch("btn_on", buttonEnabled, T("Taster an IO36", "Button on IO36"),
+      T("kurz: n&auml;chste Seite (30 s) und Nachtmodus kurz aufheben &middot; lang (1 s): Display an/aus", "short: next page (30 s) and lift night mode briefly &middot; long (1 s): display on/off")) +
+    "<p class='brihint'><small>" + T("Anschluss: Taster zwischen <b>IO36</b> und <b>GND</b>, dazu 10 k&Omega; von IO36 nach 3V3 (IO36 hat keinen eingebauten Pull-up). Ohne Taster ausgeschaltet lassen.",
+      "Wiring: button between <b>IO36</b> and <b>GND</b>, plus 10 k&Omega; from IO36 to 3V3 (IO36 has no internal pull-up). Leave off without a button.") + "</small></p></div>";
+  return html;
+}
+
+// Kompakter Schalter (Zeile mit Beschriftung links, Schiebeschalter rechts)
+String dispSwitch(const char *name, bool checked, const char *title, const char *hint) {
+  return String("<label class='dsw'><span><b>") + title + "</b><small>" + hint + "</small></span><input type='checkbox' class='tg sm' name='" + name + "' value='1'" + (checked ? " checked" : "") + "></label>";
+}
+
+String displaySectionHtml() {
+  String html = String("<h2 id='display'>") + T("Display", "Display") + "</h2>";
+  // Kopf: Live-Vorschau + Zustand
+  String state;
+  if (gfx == &oledDev) {
+    char address[8];
+    snprintf(address, sizeof(address), "0x%02X", oledDev.address());
+    state = String("<b>OLED 128&times;64</b><small>SSD1306/SSD1315 &middot; I&sup2;C ") + address + "</small>";
+  } else if (gfx == &tftDev) {
+    state = String("<b>TFT ST7735 ") + String(gfx->width()) + "&times;" + String(gfx->height()) + "</b><small>SPI &middot; " +
+      (tftDev.hasBacklight() ? T("Licht an GPIO17 (PWM)", "backlight on GPIO17 (PWM)") : T("Licht fest an", "backlight always on")) + "</small>";
+  } else if (displayType == DISP_NONE) {
+    state = String("<b>") + T("Kein Display", "No display") + "</b><small>" + T("ausgeschaltet", "disabled") + "</small>";
+  } else {
+    state = String("<b>") + T("Nicht erkannt", "Not detected") + "</b><small>" + T("Anschluss pr&uuml;fen, dann neu starten", "check the wiring, then restart") + "</small>";
+  }
+  html += String("<div class='dhead'>") +
+    (gfx != nullptr ? String("<div class='dbezel") + (gfx->isColor() ? "" : " mono") + "'><canvas id='dprev' width='" + String(gfx->width()) + "' height='" + String(gfx->height()) + "'></canvas></div>" : String("")) +
+    "<div class='dstate'><span class='pill " + (gfx != nullptr ? "ok" : "") + "'>" + (gfx != nullptr ? T("aktiv", "active") : T("inaktiv", "inactive")) + "</span>" + state +
+    (gfx != nullptr ? String("<small class='live'>") + T("Live-Vorschau, alle 2 s aktualisiert", "Live preview, updated every 2 s") + "</small>" : String("")) + "</div></div>";
+
+  auto option = [&](uint8_t value, const char *label) {
+    return String("<option value='") + String(value) + "'" + (displayType == value ? " selected" : "") + ">" + label + "</option>";
+  };
+  html += String("<form method='post' action='/display'>") +
+    // --- Hardware ---
+    "<div class='dgrp'><h3 class='fwh'>" + fwIcon(SEC_ICON_DISPLAY) + T("Hardware", "Hardware") + "</h3>"
+    "<label>" + T("Displaytyp", "Display type") + "<select name='disp_type' onchange='dispPreset(this)'>" +
+    option(DISP_OLED, "OLED 128&times;64 &middot; SSD1306/SSD1315 (I&sup2;C)") +
+    option(DISP_TFT_160X128, T("TFT ST7735 1,8&Prime; &middot; 160&times;128 (SPI)", "TFT ST7735 1.8&Prime; &middot; 160&times;128 (SPI)")) +
+    option(DISP_TFT_128X128, T("TFT ST7735 1,44&Prime; &middot; 128&times;128 (SPI)", "TFT ST7735 1.44&Prime; &middot; 128&times;128 (SPI)")) +
+    option(DISP_TFT_160X80, T("TFT ST7735 0,96&Prime; &middot; 160&times;80 (SPI)", "TFT ST7735 0.96&Prime; &middot; 160&times;80 (SPI)")) +
+    option(DISP_NONE, T("Kein Display", "No display")) + "</select></label>"
+    "<details class='dwiring'><summary>" + T("Anschlussplan anzeigen", "Show wiring") + "</summary>"
+    "<div class='dwire oled'><table class='info'><tr><td>GND / VCC</td><td><b>GND / 3V3</b></td></tr><tr><td>SCL</td><td><b>CFG (GPIO32)</b></td></tr><tr><td>SDA</td><td><b>485_EN (GPIO33)</b></td></tr></table></div>"
+    "<div class='dwire tft'><table class='info'><tr><td>GND / VCC</td><td><b>GND / 3V3</b></td></tr><tr><td>SCL (SCK)</td><td><b>CFG (GPIO32)</b></td></tr><tr><td>SDA (MOSI)</td><td><b>485_EN (GPIO33)</b></td></tr>"
+    "<tr><td>DC (A0)</td><td><b>IO4</b></td></tr><tr><td>CS</td><td><b>IO14</b></td></tr><tr><td>RES (RST)</td><td><b>RXD (GPIO5)</b></td></tr>"
+    "<tr><td>BL (LED)</td><td><b>" + T("frei (Licht an) oder TXD (GPIO17) zum Dimmen", "open (light on) or TXD (GPIO17) for dimming") + "</b></td></tr></table><p><small>" +
+    T("Das ST7735 hat kein I&sup2;C &ndash; SCL/SDA auf dem Modul sind SPI-Takt und -Daten.", "The ST7735 has no I&sup2;C &ndash; SCL/SDA on the module are SPI clock and data.") + "</small></p></div></details>"
+    "<div class='dwire tft dtft'>"
+    "<div class='doffs'><span>" + T("Versatz", "Offset") + "</span><label>X<input name='tft_offx' type='number' min='0' max='40' value='" + String(tftSettings.offsetX) + "'></label>"
+    "<label>Y<input name='tft_offy' type='number' min='0' max='40' value='" + String(tftSettings.offsetY) + "'></label><small>" + T("falls das Bild verschoben ist", "if the picture is shifted") + "</small></div>" +
+    dispSwitch("tft_bgr", tftSettings.bgr, T("Rot und Blau vertauschen", "Swap red and blue"), T("falls Blau als Rot erscheint", "if blue shows as red")) +
+    dispSwitch("tft_inv", tftSettings.invert, T("Farben invertieren", "Invert colours"), T("falls der Hintergrund wei&szlig; ist", "if the background is white")) +
+    dispSwitch("tft_bl", tftBacklightPin, T("Licht an TXD (GPIO17)", "Backlight on TXD (GPIO17)"), T("echtes Dimmen per PWM &middot; startet neu", "real PWM dimming &middot; restarts")) +
+    "</div></div>"
+    // --- Anzeige ---
+    "<div class='dgrp'><h3 class='fwh'>" + fwIcon(SEC_ICON_MODE) + T("Anzeige", "Display content") + "</h3>" +
+    fwToggle("disp_on", displayOn, SEC_ICON_DISPLAY, T("Display an", "Display on"),
+      T("Webinterface-Adresse, Datenrate, WLAN und System (CPU, RAM); bei Problemen ein Hinweis.", "Web interface address, data rate, WiFi and system (CPU, RAM); a notice when something is wrong."), "main") +
+    "<div class='dpage'><label>" + T("Seite", "Page") + "<select name='disp_page'>" +
+      dispOption(displayPageMode, 0, T("Automatisch wechseln", "Rotate automatically")) +
+      dispOption(displayPageMode, 1, T("Nur Webinterface-Adresse", "Web interface address only")) +
+      dispOption(displayPageMode, 2, T("Nur Datenrate (LAN)", "Data rate (LAN) only")) +
+      dispOption(displayPageMode, 3, T("Nur WLAN", "WiFi only")) +
+      dispOption(displayPageMode, 4, T("Nur System (CPU, RAM)", "System only (CPU, RAM)")) +
+      dispOption(displayPageMode, 5, T("Nur Heute (Datenmenge)", "Today only (data volume)")) +
+      dispOption(displayPageMode, 6, T("Nur WLAN-QR-Code", "WiFi QR code only")) + "</select></label>"
+    "<label class='dint'>" + T("Wechsel alle", "Change every") + "<select name='disp_int'>" +
+      dispOption(displayInterval, 3, "3 s") + dispOption(displayInterval, 5, "5 s") + dispOption(displayInterval, 10, "10 s") + dispOption(displayInterval, 20, "20 s") + dispOption(displayInterval, 30, "30 s") +
+      "</select></label></div>"
+    "<div class='bri'><span class='ic'>" + fwIcon(SEC_ICON_SUN) + "</span><label for='disp_bri'>" + T("Helligkeit", "Brightness") + "</label>"
+    "<input type='range' id='disp_bri' name='disp_bri' min='10' max='100' step='5' value='" + String(displayBrightness) + "' oninput=\"briSet(this.value,0)\" onchange=\"briSet(this.value,1)\"><b id='briVal'>" + String(displayBrightness) + " %</b></div>" +
+    (gfx == &tftDev && !tftDev.hasBacklight()
+      ? String("<p class='brihint'><small>") + T("Licht fest an: Die Helligkeit wird &uuml;ber dunklere Farben geregelt.", "Backlight always on: brightness is adjusted with darker colours.") + "</small></p>"
+      : String("")) +
+    dispSwitch("disp_qr", displayQr, T("WLAN-QR-Code im Wechsel", "WiFi QR code in rotation"),
+      isApMode() ? T("G&auml;ste scannen ihn und sind verbunden &ndash; jeder, der das Display sieht, kann sich verbinden", "guests scan it to connect &ndash; anyone who can see the display can join")
+                 : T("Zugang zum Setup-WLAN &ndash; jeder, der das Display sieht, kann sich verbinden", "access to the setup WiFi &ndash; anyone who can see the display can join")) +
+    dispSwitch("disp_evt", displayEvents, T("Ereignisse einblenden", "Show events"), T("neues WLAN-Ger&auml;t, Kabel gesteckt/gezogen, Router-WLAN &ndash; 4 s lang", "new WiFi device, cable plugged/unplugged, router WiFi &ndash; for 4 s")) +
+    dispSwitch("disp_dim", displayDim, T("Abdunkeln nach 1 Minute", "Dim after 1 minute"), T("wird bei Ereignissen und beim Aufruf dieser Seite wieder hell", "gets bright again on events and when this page is opened")) +
+    dispSwitch("disp_flip", displayFlip, T("Um 180&deg; drehen", "Rotate by 180&deg;"), T("Einbau mit den Anschl&uuml;ssen oben", "mounted with the connector on top")) +
+    "</div>" + displayTimeGroupHtml() +
+    "<p class='brihint'><small>" + T("Ein Wechsel des Displaytyps oder von &bdquo;Licht an TXD&ldquo; startet die Bridge neu; alles andere gilt sofort.", "Changing the display type or \"Backlight on TXD\" restarts the bridge; everything else applies immediately.") + "</small></p>"
+    "<button type='submit'>" + T("Display speichern", "Save display") + "</button></form>"
+    "<script>var briT=0;function briSet(v,save){document.getElementById('briVal').textContent=v+' %';clearTimeout(briT);"
+    "briT=setTimeout(()=>fetch('/brightness?v='+v+(save?'&save=1':''),{method:'POST'}),save?0:120);}"
+    "var TFTP={2:[0,0,0,0],3:[3,2,1,0],4:[1,26,1,1]};function dispPreset(s){let p=TFTP[s.value],f=s.form;if(!p)return;"
+    "f.tft_offx.value=p[0];f.tft_offy.value=p[1];f.tft_bgr.checked=!!p[2];f.tft_inv.checked=!!p[3];}"
+    // Live-Vorschau: holt den Bildspeicher des Displays und zeichnet ihn ins Canvas
+    "async function dprev(){let c=document.getElementById('dprev');if(!c||document.hidden)return;"
+    "let d=c.closest('details');if(d&&!d.open)return;try{let r=await fetch('/display/frame');if(!r.ok)return;"
+    "let b=new DataView(await r.arrayBuffer()),t=b.getUint8(0),w=b.getUint8(1),h=b.getUint8(2),o=3,pal=[],x=c.getContext('2d'),img=x.createImageData(w,h);"
+    "if(t==1){for(let i=0;i<9;i++){let v=b.getUint16(o);o+=2;pal.push([(v>>11)*255/31,(v>>5&63)*255/63,(v&31)*255/31]);}}"
+    "for(let y=0;y<h;y++)for(let X=0;X<w;X++){let p=(y*w+X)*4,col;"
+    "if(t==1){let i=y*w+X,n=b.getUint8(o+(i>>1));col=pal[(i&1)?n>>4:n&15]||[0,0,0];}"
+    "else col=(b.getUint8(o+X+(y>>3)*128)>>(y&7))&1?[150,210,255]:[8,12,16];"
+    "img.data[p]=col[0];img.data[p+1]=col[1];img.data[p+2]=col[2];img.data[p+3]=255;}x.putImageData(img,0,0);}catch(e){}}"
+    "dprev();setInterval(dprev,2000);</script>";
+  return html;
+}
+
+// Bildspeicher des Displays fuer die Live-Vorschau: [Typ, Breite, Hoehe, (TFT: 9 Farben RGB565), Daten]
+void sendDisplayFrame() {
+  if (gfx == nullptr) {
+    webServer.send(404, "text/plain", "no display");
+    return;
+  }
+  uint8_t header[3 + 2 * C_COUNT];
+  size_t headerLen = 3;
+  header[0] = gfx->isColor() ? 1 : 0;
+  header[1] = static_cast<uint8_t>(gfx->width());
+  header[2] = static_cast<uint8_t>(gfx->height());
+  const uint8_t *data = gfx->isColor() ? tftDev.data() : oledDev.data();
+  const size_t dataLen = gfx->isColor() ? static_cast<size_t>(gfx->width() * gfx->height() / 2) : 1024;
+  if (gfx->isColor()) {
+    for (int i = 0; i < C_COUNT; ++i) {
+      const uint16_t v = tftDev.paletteValue(i);
+      header[headerLen++] = v >> 8;
+      header[headerLen++] = v & 0xFF;
+    }
+  }
+  webServer.sendHeader("Cache-Control", "no-store");
+  webServer.setContentLength(headerLen + dataLen);
+  webServer.send(200, "application/octet-stream", "");
+  webServer.sendContent(reinterpret_cast<const char *>(header), headerLen);
+  webServer.sendContent(reinterpret_cast<const char *>(data), dataLen);
+}
+
+// ---------------------------------------------------------------------------
+// Systemstatus fuer die serielle Konsole: CPU-Last je Kern, Speicher, Versorgung, Netzwerk.
+// Befehle im seriellen Monitor: status (s), tasks (t), vmon on|off|cal <Volt>, reboot, help (?)
+// ---------------------------------------------------------------------------
+
+constexpr int VMON_PIN = 39;           // optionaler Spannungsteiler 5V -> IO39 (z. B. 2 x 10 kOhm)
+bool vmonEnabled = false;
+float vmonRatio = 2.0f;                // Teilerverhaeltnis (mit "vmon cal" justierbar)
+float cpuLoad[2] = {-1, -1};           // Prozent je Kern, -1 = noch unbekannt
+struct TaskLoad { char name[16]; float percent; uint32_t stackFree; int core; };
+constexpr int MAX_TASK_LOADS = 24;
+TaskLoad taskLoads[MAX_TASK_LOADS];
+int taskLoadCount = 0;
+
+// Misst die CPU-Last ueber die FreeRTOS-Laufzeitstatistik (Leerlauf-Task je Kern). Alle 2 s aus loop().
+void updateCpuLoad() {
+#if configGENERATE_RUN_TIME_STATS && configUSE_TRACE_FACILITY
+  static uint32_t lastMs = 0;
+  if (millis() - lastMs < 2000 && lastMs != 0) return;
+  lastMs = millis();
+  struct Previous { TaskHandle_t handle; uint32_t counter; };
+  static Previous previous[40];
+  static int previousCount = 0;
+  static uint32_t previousTotal = 0;
+  UBaseType_t count = uxTaskGetNumberOfTasks() + 2;
+  TaskStatus_t *tasks = static_cast<TaskStatus_t *>(malloc(count * sizeof(TaskStatus_t)));
+  if (tasks == nullptr) return;
+  configRUN_TIME_COUNTER_TYPE total = 0;
+  count = uxTaskGetSystemState(tasks, count, &total);
+  const uint32_t totalDelta = static_cast<uint32_t>(total) - previousTotal;
+  const bool havePrevious = previousCount > 0 && totalDelta > 0;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
+  const TaskHandle_t idle[2] = {xTaskGetIdleTaskHandleForCore(0), xTaskGetIdleTaskHandleForCore(1)};
+#else
+  const TaskHandle_t idle[2] = {xTaskGetIdleTaskHandleForCPU(0), xTaskGetIdleTaskHandleForCPU(1)};
+#endif
+  Previous current[40];
+  int currentCount = 0;
+  int loads = 0;
+  for (UBaseType_t i = 0; i < count; ++i) {
+    const uint32_t counter = static_cast<uint32_t>(tasks[i].ulRunTimeCounter);
+    uint32_t delta = 0;
+    bool known = false;
+    for (int p = 0; p < previousCount; ++p) {
+      if (previous[p].handle == tasks[i].xHandle) { delta = counter - previous[p].counter; known = true; break; }
+    }
+    if (currentCount < 40) current[currentCount++] = {tasks[i].xHandle, counter};
+    if (!havePrevious || !known) continue;
+    for (int core = 0; core < 2; ++core) {
+      if (tasks[i].xHandle == idle[core]) {
+        const float idlePercent = 100.0f * delta / totalDelta;
+        cpuLoad[core] = idlePercent >= 100.0f ? 0.0f : 100.0f - idlePercent;
+      }
+    }
+    if (tasks[i].xHandle != idle[0] && tasks[i].xHandle != idle[1] && loads < MAX_TASK_LOADS) {
+      TaskLoad &load = taskLoads[loads++];
+      strncpy(load.name, tasks[i].pcTaskName, sizeof(load.name) - 1);
+      load.name[sizeof(load.name) - 1] = 0;
+      load.percent = 100.0f * delta / (totalDelta * 2.0f);  // Anteil an beiden Kernen
+      load.stackFree = static_cast<uint32_t>(tasks[i].usStackHighWaterMark);
+#if configTASKLIST_INCLUDE_COREID
+      load.core = tasks[i].xCoreID > 1 ? -1 : static_cast<int>(tasks[i].xCoreID);
+#else
+      load.core = -1;
+#endif
+    }
+  }
+  if (havePrevious) {
+    // absteigend nach Last sortieren
+    for (int a = 0; a < loads; ++a)
+      for (int b = a + 1; b < loads; ++b)
+        if (taskLoads[b].percent > taskLoads[a].percent) { TaskLoad t = taskLoads[a]; taskLoads[a] = taskLoads[b]; taskLoads[b] = t; }
+    taskLoadCount = loads;
+  }
+  memcpy(previous, current, sizeof(Previous) * currentCount);
+  previousCount = currentCount;
+  previousTotal = static_cast<uint32_t>(total);
+  free(tasks);
+#endif
+}
+
+// 5V-Versorgung ueber den optionalen Spannungsteiler an IO39 (Volt, -1 = nicht gemessen)
+float supplyVoltage() {
+  if (!vmonEnabled) return -1;
+  uint32_t sum = 0;
+  for (int i = 0; i < 16; ++i) sum += analogReadMilliVolts(VMON_PIN);
+  const float volts = sum / 16.0f / 1000.0f * vmonRatio;
+  return volts < 0.5f ? 0.0f : volts;
+}
+
+void vmonBegin() {
+  vmonEnabled = preferences.getBool("vmon_on", false);
+  vmonRatio = preferences.getFloat("vmon_ratio", 2.0f);
+  if (vmonRatio < 1.0f || vmonRatio > 10.0f) vmonRatio = 2.0f;
+  analogSetPinAttenuation(VMON_PIN, ADC_11db);  // Messbereich bis ca. 3,1 V
+}
+
+const char *resetReasonText(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON: return "Stromversorgung eingeschaltet";
+    case ESP_RST_EXT: return "Reset-Taste/EN-Pin";
+    case ESP_RST_SW: return "Neustart durch die Firmware";
+    case ESP_RST_PANIC: return "Absturz (Exception)";
+    case ESP_RST_INT_WDT: return "Watchdog (Interrupt)";
+    case ESP_RST_TASK_WDT: return "Watchdog (Task)";
+    case ESP_RST_WDT: return "Watchdog";
+    case ESP_RST_DEEPSLEEP: return "Aufwachen aus Tiefschlaf";
+    case ESP_RST_BROWNOUT: return "UNTERSPANNUNG (Brownout)";
+    default: return "unbekannt";
+  }
+}
+
+// Balken aus 20 Zeichen fuer 0-100 %
+String percentBar(float percent) {
+#if configGENERATE_RUN_TIME_STATS && configUSE_TRACE_FACILITY
+  if (percent < 0) return String("[ wird gemessen ... ]");
+#else
+  if (percent < 0) return String("nicht verfuegbar (FreeRTOS-Laufzeitstatistik im Core aus)");
+#endif
+  const int filled = static_cast<int>(percent / 5.0f + 0.5f);
+  String bar = "[";
+  for (int i = 0; i < 20; ++i) bar += i < filled ? "\xE2\x96\x88" : "\xE2\x96\x91";  // █ bzw. ░
+  char tail[12];
+  snprintf(tail, sizeof(tail), "] %3d %%", static_cast<int>(percent + 0.5f));
+  return bar + tail;
+}
+
+String uptimeText() {
+  const uint32_t s = millis() / 1000;
+  char text[24];
+  if (s >= 86400) snprintf(text, sizeof(text), "%lu d %02lu:%02lu:%02lu", static_cast<unsigned long>(s / 86400), static_cast<unsigned long>(s / 3600 % 24), static_cast<unsigned long>(s / 60 % 60), static_cast<unsigned long>(s % 60));
+  else snprintf(text, sizeof(text), "%02lu:%02lu:%02lu", static_cast<unsigned long>(s / 3600), static_cast<unsigned long>(s / 60 % 60), static_cast<unsigned long>(s % 60));
+  return String(text);
+}
+
+void printRow(const char *label, const String &value) {
+  String line = String("   ") + label + " ";
+  while (line.length() < 21) line += ".";  // Beschriftungen ohne Umlaute, damit die Punkte buendig sind
+  Serial.printf("%s %s\n", line.c_str(), value.c_str());
+}
+
+void printSystemStatus() {
+  char text[96];
+  Serial.println();
+  Serial.printf("\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90 %s %s \xC2\xB7 Systemstatus \xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\n", PRODUCT_NAME, FIRMWARE_VERSION);
+  Serial.println(" System");
+  printRow("Laufzeit", uptimeText());
+  const esp_reset_reason_t reason = esp_reset_reason();
+  printRow("Letzter Start", resetReasonText(reason));
+  snprintf(text, sizeof(text), "%s, Rev. %u, %u Kerne @ %lu MHz", ESP.getChipModel(), static_cast<unsigned>(ESP.getChipRevision()), static_cast<unsigned>(ESP.getChipCores()), static_cast<unsigned long>(ESP.getCpuFreqMHz()));
+  printRow("Chip", text);
+  snprintf(text, sizeof(text), "%lu MB @ %lu MHz", static_cast<unsigned long>(ESP.getFlashChipSize() >> 20), static_cast<unsigned long>(ESP.getFlashChipSpeed() / 1000000));
+  printRow("Flash", text);
+  const uint32_t sketch = ESP.getSketchSize();
+  const uint32_t slot = sketch + ESP.getFreeSketchSpace() > sketch ? ESP.getFreeSketchSpace() : 0;
+  snprintf(text, sizeof(text), "%lu KB von %lu KB (%d %%)", static_cast<unsigned long>(sketch / 1024), static_cast<unsigned long>(slot / 1024), slot ? static_cast<int>(100.0f * sketch / slot + 0.5f) : 0);
+  printRow("Firmware", text);
+
+  Serial.println(" CPU");
+  printRow("Kern 0", percentBar(cpuLoad[0]));
+  printRow("Kern 1", percentBar(cpuLoad[1]));
+  if (taskLoadCount > 0) {
+    String top;
+    for (int i = 0; i < taskLoadCount && i < 4; ++i) {
+      snprintf(text, sizeof(text), "%s%s %.1f %%", i ? ", " : "", taskLoads[i].name, taskLoads[i].percent);
+      top += text;
+    }
+    printRow("Top-Tasks", top);
+  }
+
+  Serial.println(" Speicher");
+  const uint32_t heapSize = ESP.getHeapSize();
+  const uint32_t heapFree = ESP.getFreeHeap();
+  printRow("RAM belegt", percentBar(heapSize ? 100.0f * (heapSize - heapFree) / heapSize : -1));
+  snprintf(text, sizeof(text), "%lu KB (min. %lu KB, groesster Block %lu KB)", static_cast<unsigned long>(heapFree / 1024), static_cast<unsigned long>(ESP.getMinFreeHeap() / 1024), static_cast<unsigned long>(ESP.getMaxAllocHeap() / 1024));
+  printRow("RAM frei", text);
+  nvs_stats_t nvs{};
+  if (nvs_get_stats(nullptr, &nvs) == ESP_OK) {
+    snprintf(text, sizeof(text), "%u von %u Eintraegen belegt", static_cast<unsigned>(nvs.used_entries), static_cast<unsigned>(nvs.total_entries));
+    printRow("Einstellungen", text);
+  }
+
+  Serial.println(" Versorgung");
+  const float volts = supplyVoltage();
+  if (volts < 0) {
+    printRow("5V-Eingang", "nicht gemessen (optional: Spannungsteiler an IO39, Befehl 'vmon on')");
+  } else if (volts == 0) {
+    printRow("5V-Eingang", "keine Spannung an IO39 - Spannungsteiler angeschlossen?");
+  } else {
+    snprintf(text, sizeof(text), "%.2f V %s", volts, volts < 4.6f ? "  ZU NIEDRIG!" : volts > 5.4f ? "  zu hoch" : "  ok");
+    printRow("5V-Eingang", text);
+  }
+  printRow("Brownout", reason == ESP_RST_BROWNOUT ? "JA - letzter Neustart durch Unterspannung!" : "nein");
+
+  Serial.println(" Netzwerk");
+  static const char *const modes[] = {"NAT", "Bridge", "Access Point (NAT)", "Access Point (Bridge)"};
+  printRow("Betriebsart", modes[bridgeMode]);
+  if (ethernetLinkUp) {
+    const uint32_t down = isApMode() ? lanRxRate : lanTxRate;
+    const uint32_t up = isApMode() ? lanTxRate : lanRxRate;
+    snprintf(text, sizeof(text), "%d Mbit/s %s, Download %.1f Mbit/s, Upload %.1f Mbit/s", ethernetSpeedMbit, ethernetFullDuplex ? "Vollduplex" : "Halbduplex", down / 1e6, up / 1e6);
+    printRow("LAN-Port", text);
+  } else {
+    printRow("LAN-Port", "kein Kabel");
+  }
+  uint8_t channel = 0;
+  wifi_second_chan_t second;
+  esp_wifi_get_channel(&channel, &second);
+  if (isApMode()) snprintf(text, sizeof(text), "\"%s\", Kanal %u, %d Geraet(e)", apSsid.c_str(), channel, WiFi.softAPgetStationNum());
+  else if (wifiConnected) snprintf(text, sizeof(text), "\"%s\", Kanal %u, %d dBm", WiFi.SSID().c_str(), channel, WiFi.RSSI());
+  else snprintf(text, sizeof(text), "nicht verbunden");
+  printRow("WLAN", text);
+  const String ip = isApMode() ? displayUplinkIp() : (wifiConnected && bridgeMode == MODE_NAT ? WiFi.localIP().toString() : String("192.168.4.1 (Setup-WLAN)"));
+  printRow("Webinterface", ip.isEmpty() ? String("wartet auf IP") : String("http://") + ip);
+  printRow("Display", gfx == nullptr ? String("keins") : gfx->isColor() ? String("TFT ST7735 ") + String(gfx->width()) + "x" + String(gfx->height()) : String("OLED 128x64"));
+  Serial.println(" Befehle: status, tasks, vmon on|off|cal <Volt>, diag on|off|<Sekunden>, reboot, help");
+  Serial.println();
+}
+
+void printTasks() {
+  Serial.println();
+  Serial.println(" Task             Kern   CPU     Stack frei");
+  for (int i = 0; i < taskLoadCount; ++i) {
+    char core[4];
+    if (taskLoads[i].core < 0) snprintf(core, sizeof(core), "-");
+    else snprintf(core, sizeof(core), "%d", taskLoads[i].core);
+    Serial.printf(" %-16s %-4s %5.1f %%   %5lu Bytes\n", taskLoads[i].name, core, taskLoads[i].percent, static_cast<unsigned long>(taskLoads[i].stackFree));
+  }
+  if (taskLoadCount == 0) Serial.println(" (noch keine Messung - in 2 s erneut versuchen)");
+  Serial.println();
+}
+
+void runConsoleCommand(String line) {
+  line.trim();
+  line.toLowerCase();
+  if (line.isEmpty()) return;
+  Serial.printf("\n> %s\n", line.c_str());  // eingegebenen Befehl anzeigen
+  if (line == "status" || line == "s") {
+    printSystemStatus();
+  } else if (line == "tasks" || line == "t") {
+    printTasks();
+  } else if (line == "vmon on" || line == "vmon off") {
+    vmonEnabled = line == "vmon on";
+    preferences.putBool("vmon_on", vmonEnabled);
+    Serial.printf("Spannungsmessung an IO39 %s\n", vmonEnabled ? "eingeschaltet (Teiler 5V -> IO39, z. B. 2 x 10 kOhm)" : "ausgeschaltet");
+  } else if (line.startsWith("vmon cal ")) {
+    const float actual = atof(line.substring(9).c_str());
+    const bool wasOn = vmonEnabled;
+    vmonEnabled = true;
+    const float measured = supplyVoltage();
+    vmonEnabled = wasOn;
+    if (actual < 1.0f || measured <= 0.1f) {
+      Serial.println("Kalibrierung nicht moeglich: z. B. 'vmon cal 5.02' mit der per Multimeter gemessenen Spannung eingeben.");
+    } else {
+      vmonRatio = vmonRatio * actual / measured;
+      preferences.putFloat("vmon_ratio", vmonRatio);
+      Serial.printf("Kalibriert: Teilerfaktor %.3f (gemessen %.2f V -> %.2f V)\n", vmonRatio, measured, actual);
+    }
+  } else if (line == "diag off" || line == "diag on" || line.startsWith("diag ")) {
+    long seconds = line == "diag off" ? 0 : line == "diag on" ? 10 : line.substring(5).toInt();
+    if (seconds < 0) seconds = 0;
+    if (seconds > 3600) seconds = 3600;
+    diagIntervalMs = static_cast<uint32_t>(seconds) * 1000;
+    preferences.putUShort("diag_s", static_cast<uint16_t>(seconds));
+    if (seconds) Serial.printf("Statuszeile alle %ld s\n", seconds);
+    else Serial.println("Statuszeile ausgeschaltet ('diag on' schaltet sie wieder ein)");
+  } else if (line == "reboot") {
+    Serial.println("Neustart ...");
+    restartAtMs = millis() + 200;
+  } else {
+    Serial.println("Befehle: status (s)  Systemstatus | tasks (t)  Tasks mit CPU-Anteil und Stack | vmon on|off  Spannungsmessung an IO39 |");
+    Serial.println("         vmon cal 5.02  mit gemessener Spannung kalibrieren | diag on|off|<Sekunden>  Statuszeile | reboot  Neustart");
+  }
+}
+
+// Liest Befehle aus dem seriellen Monitor (zeilenweise, ohne zu blockieren).
+// Der erkannte Befehl wird als eigene Zeile "> befehl" ausgegeben - das ist in jedem Monitor sichtbar
+// (auch mit zeilenweise puffernden Filtern). Kommt kein Zeilenende, wird der Befehl nach 2 s ausgefuehrt.
+void handleConsole() {
+  static char line[48];
+  static size_t length = 0;
+  static uint32_t lastCharMs = 0;
+  while (Serial.available() > 0) {
+    const char c = static_cast<char>(Serial.read());
+    lastCharMs = millis();
+    if (c == '\r' || c == '\n') {
+      if (length > 0) {
+        line[length] = 0;
+        length = 0;
+        runConsoleCommand(String(line));
+      }
+    } else if ((c == 8 || c == 127) && length > 0) {  // Ruecktaste
+      --length;
+    } else if (c >= 32 && c < 127 && length < sizeof(line) - 1) {
+      line[length++] = c;
+    }
+  }
+  if (length > 0 && millis() - lastCharMs > 2000) {  // Monitor sendet kein Zeilenende
+    line[length] = 0;
+    length = 0;
+    runConsoleCommand(String(line));
+  }
+  consoleTyping = length > 0;
+}
+
+// ---------------------------------------------------------------------------
 
 void setup() {
   Serial.begin(115200);
@@ -2826,6 +4216,12 @@ void setup() {
   bootCounterClearAtMs = millis() + 10000;
 
   fwLoad();
+  vmonBegin();
+  diagIntervalMs = static_cast<uint32_t>(preferences.getUShort("diag_s", 10)) * 1000;
+  Serial.println("Konsole: 'help' + Enter zeigt die Befehle (z. B. 'status')");
+  if (esp_reset_reason() == ESP_RST_BROWNOUT) Serial.println("ACHTUNG: Letzter Neustart durch Unterspannung (Brownout) - Netzteil und Kabel pruefen!");
+  displayBegin();
+  timeBegin();
   if (preferences.isKey("web_hash") && preferences.isKey("web_salt")) {
     webPassHash = preferences.getString("web_hash", "");
     webPassSalt = preferences.getString("web_salt", "");
@@ -2899,6 +4295,9 @@ void setup() {
   webServer.on("/appass", HTTP_POST, guarded<saveApPassword>);
   webServer.on("/firewall", HTTP_POST, guarded<saveFirewall>);
   webServer.on("/webpass", HTTP_POST, guarded<saveWebPassword>);
+  webServer.on("/display", HTTP_POST, guarded<saveDisplay>);
+  webServer.on("/brightness", HTTP_POST, guarded<setDisplayBrightness>);
+  webServer.on("/display/frame", HTTP_GET, guarded<sendDisplayFrame>);
   webServer.on("/login", HTTP_POST, doLogin);
   webServer.on("/logout", HTTP_POST, doLogout);
   webServer.on("/lang", HTTP_GET, setLanguage);
@@ -2925,6 +4324,7 @@ void setup() {
     scheduleReconnect();
   }
   if (bridgeMode != MODE_AP_BRIDGE) Serial.println("Webinterface: http://192.168.4.1");
+  timeStart();  // Uhrzeit per NTP, sobald der Netzwerk-Stack laeuft
 }
 
 // Einmal pro Sekunde: Bytezaehler -> Datenrate (Bit/s), Summen und Hoechstwerte
@@ -2966,6 +4366,16 @@ void loop() {
   webServer.handleClient();
   logDiagnostics();
   updateLanRates();
+  displayLoop();
+  buttonLoop();
+  updateCpuLoad();
+  handleConsole();
+  // einmal nach dem Start den kompletten Systemstatus ausgeben
+  static bool statusPrinted = false;
+  if (!statusPrinted && millis() > 15000) {
+    statusPrinted = true;
+    printSystemStatus();
+  }
   // Falls die Seite geschlossen wurde, bevor das Scan-Ergebnis abgeholt war
   if (scanPausedConnect && millis() - scanStartedMs > 20000) {
     WiFi.scanDelete();
