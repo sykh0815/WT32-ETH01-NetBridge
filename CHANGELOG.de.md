@@ -14,6 +14,15 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.14.3] – 03.11.2026
+
+### Behoben
+- **Access Point (Bridge): Durchsatz.** Ist der WLAN-Sendepuffer voll, wird jetzt jede Millisekunde erneut
+  gesendet statt mit immer längeren Pausen (bisher 2, 4, 6 … ms). Die Warteschlange läuft dadurch
+  seltener über.
+- Statusdaten: getrennte Zähler für verworfene Frames (Warteschlange voll / vom WLAN-Treiber
+  abgelehnt) und der letzte Fehlercode des Treibers, zur Fehlersuche.
+
 ## [3.14.2] – 03.11.2026
 
 ### Behoben

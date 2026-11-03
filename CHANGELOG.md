@@ -13,6 +13,15 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.14.3] – 2026-11-03
+
+### Fixed
+- **Access Point (Bridge): throughput.** When the WiFi send buffer is full, frames are now retried every
+  millisecond instead of with ever longer pauses (previously 2, 4, 6 … ms). The queue overflows less
+  often as a result.
+- Status data: separate counters for dropped frames (queue full / rejected by the WiFi driver) and the
+  driver's last error code, for troubleshooting.
+
 ## [3.14.2] – 2026-11-03
 
 ### Fixed

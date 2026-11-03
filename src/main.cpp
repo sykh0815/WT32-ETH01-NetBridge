@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.14.2";
+constexpr char FIRMWARE_VERSION[] = "3.14.3";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -238,6 +238,9 @@ inline void countLanRx(uint32_t len) { __atomic_fetch_add(&lanRxBytes, len, __AT
 inline void countLanTx(uint32_t len) { __atomic_fetch_add(&lanTxBytes, len, __ATOMIC_RELAXED); }
 volatile uint32_t framesToLan = 0;
 volatile uint32_t framesDropped = 0;
+volatile uint32_t dropsQueue = 0;  // AP-Bridge: verworfen, weil die Warteschlange voll war
+volatile uint32_t dropsWifi = 0;   // AP-Bridge: verworfen, weil der WLAN-Treiber abgelehnt hat
+volatile int lastWifiTxError = 0;
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
@@ -1117,6 +1120,7 @@ String lanStatusJson() {
   if (bridgeMode == MODE_BRIDGE) json += ",\"staMac\":\"" + macToString(staMac) + "\"";
   if (bridgeMode == MODE_BRIDGE || bridgeMode == MODE_AP_BRIDGE) {
     json += ",\"toWifi\":" + String(framesToWifi) + ",\"toLan\":" + String(framesToLan) + ",\"dropped\":" + String(framesDropped);
+    if (bridgeMode == MODE_AP_BRIDGE) json += ",\"dropsQueue\":" + String(dropsQueue) + ",\"dropsWifi\":" + String(dropsWifi) + ",\"wifiTxError\":" + String(lastWifiTxError);
   }
   uint32_t leaseMinutes = 0;
   // Nur im NAT-Modus hat die Ethernet-Schnittstelle einen DHCP-Server (im AP-NAT-Modus ist sie DHCP-Client)
@@ -2359,6 +2363,7 @@ esp_err_t onUplinkFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, 
   const bool queueBusy = group && uxQueueMessagesWaiting(apForwardQueue) > AP_QUEUE_LEN / 2;
   if (queueBusy || xQueueSend(apForwardQueue, &frame, group ? 0 : pdMS_TO_TICKS(20)) != pdTRUE) {
     framesDropped = framesDropped + 1;
+    dropsQueue = dropsQueue + 1;
     free(buffer);
   }
   return ESP_OK;
@@ -2370,13 +2375,18 @@ void apForwardTask(void *argument) {
   for (;;) {
     if (xQueueReceive(apForwardQueue, &frame, portMAX_DELAY) != pdTRUE) continue;
     int result = -1;
-    for (uint32_t wait = 0; wait < 100; wait += 2) {
+    // Bei vollem Sendepuffer jede Millisekunde erneut versuchen (hoechstens 100 ms), sonst sofort aufgeben
+    for (int attempt = 0; attempt < 100; ++attempt) {
       result = esp_wifi_internal_tx(WIFI_IF_AP, frame.data, frame.len);
-      if (result != ESP_ERR_NO_MEM) break;  // nur bei vollem Sendepuffer erneut versuchen
-      vTaskDelay(pdMS_TO_TICKS(wait));
+      if (result != ESP_ERR_NO_MEM) break;
+      vTaskDelay(1);
     }
     if (result == ESP_OK) framesToWifi = framesToWifi + 1;
-    else framesDropped = framesDropped + 1;
+    else {
+      framesDropped = framesDropped + 1;
+      dropsWifi = dropsWifi + 1;
+      lastWifiTxError = result;
+    }
     free(frame.data);
   }
 }
