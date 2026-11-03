@@ -14,6 +14,18 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.14.2] – 03.11.2026
+
+### Behoben
+- **Access Point (Bridge): fast kein Durchsatz.** Ethernet läuft in dieser Betriebsart im
+  Promiscuous-Modus und hat auch Frames für fremde Geräte im Heimnetz ins WLAN weitergereicht. Lehnte
+  der WLAN-Treiber einen solchen Frame ab, wurde er bis zu ~2,5 s lang erneut gesendet, und die ganze
+  Weiterleitung stand still. Jetzt gehen nur Broadcast/Multicast und Frames an verbundene WLAN-Geräte
+  ins WLAN. Erneut gesendet wird nur bei vollem Sendepuffer. Broadcast/Multicast wird bei voller
+  Warteschlange verworfen, damit die Nutzdaten Vorrang haben.
+- Webinterface: Die Frame-Zähler (LAN → WLAN, WLAN → LAN, verworfen) werden auch im Modus „Access
+  Point (Bridge)“ angezeigt.
+
 ## [3.14.1] – 03.11.2026
 
 ### Behoben

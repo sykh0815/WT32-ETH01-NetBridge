@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.14.1";
+constexpr char FIRMWARE_VERSION[] = "3.14.2";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -154,6 +154,7 @@ volatile int apStationCount = 0;          // AP-Bridge: verbundene WLAN-Geraete
 QueueHandle_t apForwardQueue = nullptr;   // AP-Bridge: Ethernet -> WLAN (WLAN ist langsamer)
 esp_netif_t *apNetif = nullptr;          // Netzwerk-Schnittstelle des Access Points
 struct ForwardFrame { uint8_t *data; uint16_t len; };
+const UBaseType_t AP_QUEUE_LEN = 40;  // AP-Bridge: Warteschlange Ethernet -> WLAN
 bool scanPausedConnect = false;  // Verbindungsversuche waehrend eines WLAN-Scans angehalten
 uint32_t scanStartedMs = 0;
 
@@ -1113,8 +1114,8 @@ String lanStatusJson() {
   if (ethernetHandle != nullptr && esp_eth_ioctl(ethernetHandle, ETH_CMD_G_MAC_ADDR, bridgeMac) == ESP_OK) {
     json += ",\"bridgeMac\":\"" + macToString(bridgeMac) + "\"";
   }
-  if (bridgeMode == MODE_BRIDGE) {
-    json += ",\"staMac\":\"" + macToString(staMac) + "\"";
+  if (bridgeMode == MODE_BRIDGE) json += ",\"staMac\":\"" + macToString(staMac) + "\"";
+  if (bridgeMode == MODE_BRIDGE || bridgeMode == MODE_AP_BRIDGE) {
     json += ",\"toWifi\":" + String(framesToWifi) + ",\"toLan\":" + String(framesToLan) + ",\"dropped\":" + String(framesDropped);
   }
   uint32_t leaseMinutes = 0;
@@ -1448,7 +1449,7 @@ void showHome() {
     "document.querySelectorAll('details.sec').forEach(d=>{let k='sec_'+d.id;try{let v=localStorage.getItem(k);if(v)d.open=v=='1';}catch(e){}d.addEventListener('toggle',()=>{try{localStorage.setItem(k,d.open?'1':'0');}catch(e){}});});"
     "window.addEventListener('hashchange',openSec);openSec();"
     "function row(k,v){return '<tr><td>'+k+'</td><td><b>'+v+'</b></td></tr>';}"
-    "function showLan(s){let l=s.lan,br=s.mode=='bridge',ap=!!s.uplink,box=document.getElementById('lanInfo'),h='';"
+    "function showLan(s){let l=s.lan,br=s.mode=='bridge'||s.mode=='apbridge',ap=!!s.uplink,box=document.getElementById('lanInfo'),h='';"
     "if(!s.ethLink){box.innerHTML='<p class=\\'wait\\'>'+(ap?L.noUplink:L.noCable)+'</p>';return;}"
     "h+=row(L.link,l.speed+' Mbit/s, '+(l.fullDuplex?L.full:L.half));h+=row(L.since,dur(l.linkSeconds));let dn=ap?l.rxRate:l.txRate,up=ap?l.txRate:l.rxRate;RH.push([dn,up]);if(RH.length>60)RH.shift();h+=row(L.rate,'<span class=dn>\\u2193 '+rate(dn)+'</span> \\u00b7 <span class=up>\\u2191 '+rate(up)+'</span>');h+='<tr><td colspan=2>'+spark()+'</td></tr>';h+=row(L.peak,'\\u2193 '+rate(ap?l.rxPeak:l.txPeak)+' \\u00b7 \\u2191 '+rate(ap?l.txPeak:l.rxPeak));h+=row(L.total,'\\u2193 '+size(ap?l.rxTotal:l.txTotal)+' \\u00b7 \\u2191 '+size(ap?l.txTotal:l.rxTotal));if(ap){h+=row(L.homeIp,s.uplink.ip||L.waitingIp);if(s.uplink.gw)h+=row(L.gateway,s.uplink.gw);box.innerHTML='<table class=\\'info\\'>'+h+'</table>';return;}"
     "if(!l.clients.length){h+=row(br?L.device:L.ip,br?L.notDetected:L.noLease);}"
@@ -2348,8 +2349,16 @@ esp_err_t onUplinkFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, 
     free(buffer);
     return ESP_OK;
   }
-  if (apStationCount <= 0 || len > 1600 || xQueueSend(apForwardQueue, &frame, pdMS_TO_TICKS(20)) != pdTRUE) {
-    if (apStationCount > 0) framesDropped = framesDropped + 1;
+  // Promiscuous-Modus liefert auch Frames fuer fremde Geraete: ins WLAN nur Broadcast/Multicast und Frames an WLAN-Geraete
+  const bool group = buffer[0] & 0x01;
+  if (apStationCount <= 0 || (!group && !fwIsApStation(buffer))) {
+    free(buffer);
+    return ESP_OK;
+  }
+  // Broadcast/Multicast nie warten lassen und bei voller Warteschlange verwerfen: Vorrang fuer Nutzdaten
+  const bool queueBusy = group && uxQueueMessagesWaiting(apForwardQueue) > AP_QUEUE_LEN / 2;
+  if (queueBusy || xQueueSend(apForwardQueue, &frame, group ? 0 : pdMS_TO_TICKS(20)) != pdTRUE) {
+    framesDropped = framesDropped + 1;
     free(buffer);
   }
   return ESP_OK;
@@ -2363,7 +2372,7 @@ void apForwardTask(void *argument) {
     int result = -1;
     for (uint32_t wait = 0; wait < 100; wait += 2) {
       result = esp_wifi_internal_tx(WIFI_IF_AP, frame.data, frame.len);
-      if (result == ESP_OK) break;
+      if (result != ESP_ERR_NO_MEM) break;  // nur bei vollem Sendepuffer erneut versuchen
       vTaskDelay(pdMS_TO_TICKS(wait));
     }
     if (result == ESP_OK) framesToWifi = framesToWifi + 1;
@@ -2384,7 +2393,7 @@ void onApDriverEvent(void *argument, esp_event_base_t eventBase, int32_t eventId
 
 // AP-Bridge: Ethernet und WLAN-Access-Point auf Ebene 2 verbinden (wie Espressifs Beispiel "eth2ap").
 void startApBridge() {
-  apForwardQueue = xQueueCreate(40, sizeof(ForwardFrame));
+  apForwardQueue = xQueueCreate(AP_QUEUE_LEN, sizeof(ForwardFrame));
   if (apForwardQueue == nullptr || xTaskCreate(apForwardTask, "eth2ap", 3072, nullptr, tskIDLE_PRIORITY + 2, nullptr) != pdPASS) {
     Serial.println("AP-Bridge: Warteschlange konnte nicht angelegt werden");
     return;

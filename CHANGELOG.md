@@ -13,6 +13,18 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.14.2] – 2026-11-03
+
+### Fixed
+- **Access Point (Bridge): almost no throughput.** In this mode Ethernet runs in promiscuous mode and
+  also forwarded frames for other devices on the home network to the WiFi. When the WiFi driver
+  rejected such a frame, it was retried for up to ~2.5 s and all forwarding stalled. Now only
+  broadcast/multicast and frames to connected WiFi devices go to the WiFi. Frames are only retried
+  when the send buffer is full. Broadcast/multicast is dropped when the queue is full, so payload data
+  has priority.
+- Web interface: the frame counters (LAN → WiFi, WiFi → LAN, dropped) are also shown in "Access Point
+  (Bridge)" mode.
+
 ## [3.14.1] – 2026-11-03
 
 ### Fixed
