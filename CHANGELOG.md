@@ -13,6 +13,14 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.14.4] – 2026-11-03
+
+### Fixed
+- **Access Point (Bridge): throughput.** Broadcast/multicast from the home network (mDNS, SSDP, IPv6 …)
+  is sent over WiFi at the lowest data rate and filled the WiFi driver's send buffers, leaving no room
+  for payload data (error `ESP_ERR_NO_MEM`). It now goes to the WiFi at no more than 50 frames per
+  second and is not retried when the buffer is full. New counter `groupsLimited` in the status data.
+
 ## [3.14.3] – 2026-11-03
 
 ### Fixed

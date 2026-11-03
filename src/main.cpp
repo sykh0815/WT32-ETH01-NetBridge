@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.14.3";
+constexpr char FIRMWARE_VERSION[] = "3.14.4";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -155,6 +155,8 @@ QueueHandle_t apForwardQueue = nullptr;   // AP-Bridge: Ethernet -> WLAN (WLAN i
 esp_netif_t *apNetif = nullptr;          // Netzwerk-Schnittstelle des Access Points
 struct ForwardFrame { uint8_t *data; uint16_t len; };
 const UBaseType_t AP_QUEUE_LEN = 40;  // AP-Bridge: Warteschlange Ethernet -> WLAN
+const uint32_t AP_GROUP_PER_SECOND = 50;  // AP-Bridge: hoechstens so viele Broadcast/Multicast-Frames pro Sekunde ins WLAN
+const uint32_t AP_GROUP_BURST = 20;
 bool scanPausedConnect = false;  // Verbindungsversuche waehrend eines WLAN-Scans angehalten
 uint32_t scanStartedMs = 0;
 
@@ -241,6 +243,7 @@ volatile uint32_t framesDropped = 0;
 volatile uint32_t dropsQueue = 0;  // AP-Bridge: verworfen, weil die Warteschlange voll war
 volatile uint32_t dropsWifi = 0;   // AP-Bridge: verworfen, weil der WLAN-Treiber abgelehnt hat
 volatile int lastWifiTxError = 0;
+volatile uint32_t groupsLimited = 0;  // AP-Bridge: Broadcast/Multicast wegen der Ratenbegrenzung nicht ins WLAN
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
@@ -1120,7 +1123,7 @@ String lanStatusJson() {
   if (bridgeMode == MODE_BRIDGE) json += ",\"staMac\":\"" + macToString(staMac) + "\"";
   if (bridgeMode == MODE_BRIDGE || bridgeMode == MODE_AP_BRIDGE) {
     json += ",\"toWifi\":" + String(framesToWifi) + ",\"toLan\":" + String(framesToLan) + ",\"dropped\":" + String(framesDropped);
-    if (bridgeMode == MODE_AP_BRIDGE) json += ",\"dropsQueue\":" + String(dropsQueue) + ",\"dropsWifi\":" + String(dropsWifi) + ",\"wifiTxError\":" + String(lastWifiTxError);
+    if (bridgeMode == MODE_AP_BRIDGE) json += ",\"dropsQueue\":" + String(dropsQueue) + ",\"dropsWifi\":" + String(dropsWifi) + ",\"wifiTxError\":" + String(lastWifiTxError) + ",\"groupsLimited\":" + String(groupsLimited);
   }
   uint32_t leaseMinutes = 0;
   // Nur im NAT-Modus hat die Ethernet-Schnittstelle einen DHCP-Server (im AP-NAT-Modus ist sie DHCP-Client)
@@ -2360,6 +2363,23 @@ esp_err_t onUplinkFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, 
     return ESP_OK;
   }
   // Broadcast/Multicast nie warten lassen und bei voller Warteschlange verwerfen: Vorrang fuer Nutzdaten
+  // Broadcast/Multicast laufen im WLAN mit der niedrigsten Datenrate und belegen die Sendepuffer lange:
+  // auf AP_GROUP_PER_SECOND begrenzen (Token-Bucket), damit die Nutzdaten Platz haben
+  if (group) {
+    static uint32_t tokens = AP_GROUP_BURST, lastRefillMs = 0;
+    const uint32_t now = millis();
+    const uint32_t refill = (now - lastRefillMs) * AP_GROUP_PER_SECOND / 1000;
+    if (refill > 0) {
+      tokens = min(AP_GROUP_BURST, tokens + refill);
+      lastRefillMs = now;
+    }
+    if (tokens == 0) {
+      groupsLimited = groupsLimited + 1;
+      free(buffer);
+      return ESP_OK;
+    }
+    tokens = tokens - 1;
+  }
   const bool queueBusy = group && uxQueueMessagesWaiting(apForwardQueue) > AP_QUEUE_LEN / 2;
   if (queueBusy || xQueueSend(apForwardQueue, &frame, group ? 0 : pdMS_TO_TICKS(20)) != pdTRUE) {
     framesDropped = framesDropped + 1;
@@ -2375,10 +2395,12 @@ void apForwardTask(void *argument) {
   for (;;) {
     if (xQueueReceive(apForwardQueue, &frame, portMAX_DELAY) != pdTRUE) continue;
     int result = -1;
-    // Bei vollem Sendepuffer jede Millisekunde erneut versuchen (hoechstens 100 ms), sonst sofort aufgeben
-    for (int attempt = 0; attempt < 100; ++attempt) {
+    // Bei vollem Sendepuffer jede Millisekunde erneut versuchen (hoechstens 100 ms), sonst sofort aufgeben.
+    // Broadcast/Multicast nur einmal: sie sollen die Nutzdaten nicht aufhalten.
+    const int attempts = (frame.data[0] & 0x01) ? 1 : 100;
+    for (int attempt = 0; attempt < attempts; ++attempt) {
       result = esp_wifi_internal_tx(WIFI_IF_AP, frame.data, frame.len);
-      if (result != ESP_ERR_NO_MEM) break;
+      if (result != ESP_ERR_NO_MEM || attempt + 1 == attempts) break;
       vTaskDelay(1);
     }
     if (result == ESP_OK) framesToWifi = framesToWifi + 1;

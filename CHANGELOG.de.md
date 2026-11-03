@@ -14,6 +14,15 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.14.4] – 03.11.2026
+
+### Behoben
+- **Access Point (Bridge): Durchsatz.** Broadcast/Multicast aus dem Heimnetz (mDNS, SSDP, IPv6 …) laufen
+  im WLAN mit der niedrigsten Datenrate und haben die Sendepuffer des WLAN-Treibers gefüllt, sodass
+  für die Nutzdaten kein Platz blieb (Fehler `ESP_ERR_NO_MEM`). Sie gehen jetzt mit höchstens 50 Frames
+  pro Sekunde ins WLAN und werden bei vollem Puffer nicht erneut gesendet. Neuer Zähler
+  `groupsLimited` in den Statusdaten.
+
 ## [3.14.3] – 03.11.2026
 
 ### Behoben
