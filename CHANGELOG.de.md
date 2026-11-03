@@ -14,6 +14,15 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.14.5] – 03.11.2026
+
+### Behoben
+- **Access Point (Bridge): Ethernet hing nach einem Speedtest.** Unter Volllast war der freie Speicher
+  auf ~44 KB gefallen; danach empfing Ethernet nichts mehr (Bridge und WLAN-Geräte im Heimnetz nicht
+  mehr erreichbar). Die Warteschlange ist jetzt kleiner (24 Frames), und unter 60 KB freiem Speicher
+  werden keine Frames mehr gepuffert. Zusätzlich startet ein Wächter Ethernet neu, wenn 15 s lang nichts
+  empfangen wurde (serielle Meldung, Zähler `lanRestarts` in den Statusdaten).
+
 ## [3.14.4] – 03.11.2026
 
 ### Behoben

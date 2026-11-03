@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.14.4";
+constexpr char FIRMWARE_VERSION[] = "3.14.5";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -154,7 +154,8 @@ volatile int apStationCount = 0;          // AP-Bridge: verbundene WLAN-Geraete
 QueueHandle_t apForwardQueue = nullptr;   // AP-Bridge: Ethernet -> WLAN (WLAN ist langsamer)
 esp_netif_t *apNetif = nullptr;          // Netzwerk-Schnittstelle des Access Points
 struct ForwardFrame { uint8_t *data; uint16_t len; };
-const UBaseType_t AP_QUEUE_LEN = 40;  // AP-Bridge: Warteschlange Ethernet -> WLAN
+const UBaseType_t AP_QUEUE_LEN = 24;  // AP-Bridge: Warteschlange Ethernet -> WLAN
+const uint32_t AP_MIN_FREE_HEAP = 60000;  // AP-Bridge: darunter keine Frames mehr puffern (Ethernet-Treiber braucht Speicher)
 const uint32_t AP_GROUP_PER_SECOND = 50;  // AP-Bridge: hoechstens so viele Broadcast/Multicast-Frames pro Sekunde ins WLAN
 const uint32_t AP_GROUP_BURST = 20;
 bool scanPausedConnect = false;  // Verbindungsversuche waehrend eines WLAN-Scans angehalten
@@ -243,7 +244,8 @@ volatile uint32_t framesDropped = 0;
 volatile uint32_t dropsQueue = 0;  // AP-Bridge: verworfen, weil die Warteschlange voll war
 volatile uint32_t dropsWifi = 0;   // AP-Bridge: verworfen, weil der WLAN-Treiber abgelehnt hat
 volatile int lastWifiTxError = 0;
-volatile uint32_t groupsLimited = 0;  // AP-Bridge: Broadcast/Multicast wegen der Ratenbegrenzung nicht ins WLAN
+volatile uint32_t groupsLimited = 0;
+uint32_t lanRestarts = 0;  // AP-Bridge: Ethernet nach Empfangsstillstand neu gestartet  // AP-Bridge: Broadcast/Multicast wegen der Ratenbegrenzung nicht ins WLAN
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
@@ -1123,7 +1125,7 @@ String lanStatusJson() {
   if (bridgeMode == MODE_BRIDGE) json += ",\"staMac\":\"" + macToString(staMac) + "\"";
   if (bridgeMode == MODE_BRIDGE || bridgeMode == MODE_AP_BRIDGE) {
     json += ",\"toWifi\":" + String(framesToWifi) + ",\"toLan\":" + String(framesToLan) + ",\"dropped\":" + String(framesDropped);
-    if (bridgeMode == MODE_AP_BRIDGE) json += ",\"dropsQueue\":" + String(dropsQueue) + ",\"dropsWifi\":" + String(dropsWifi) + ",\"wifiTxError\":" + String(lastWifiTxError) + ",\"groupsLimited\":" + String(groupsLimited);
+    if (bridgeMode == MODE_AP_BRIDGE) json += ",\"dropsQueue\":" + String(dropsQueue) + ",\"dropsWifi\":" + String(dropsWifi) + ",\"wifiTxError\":" + String(lastWifiTxError) + ",\"groupsLimited\":" + String(groupsLimited) + ",\"lanRestarts\":" + String(lanRestarts);
   }
   uint32_t leaseMinutes = 0;
   // Nur im NAT-Modus hat die Ethernet-Schnittstelle einen DHCP-Server (im AP-NAT-Modus ist sie DHCP-Client)
@@ -2381,7 +2383,7 @@ esp_err_t onUplinkFrame(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, 
     tokens = tokens - 1;
   }
   const bool queueBusy = group && uxQueueMessagesWaiting(apForwardQueue) > AP_QUEUE_LEN / 2;
-  if (queueBusy || xQueueSend(apForwardQueue, &frame, group ? 0 : pdMS_TO_TICKS(20)) != pdTRUE) {
+  if (queueBusy || esp_get_free_heap_size() < AP_MIN_FREE_HEAP || xQueueSend(apForwardQueue, &frame, group ? 0 : pdMS_TO_TICKS(20)) != pdTRUE) {
     framesDropped = framesDropped + 1;
     dropsQueue = dropsQueue + 1;
     free(buffer);
@@ -4373,6 +4375,29 @@ void setup() {
 }
 
 // Einmal pro Sekunde: Bytezaehler -> Datenrate (Bit/s), Summen und Hoechstwerte
+// AP-Bridge: Im Heimnetz kommt immer etwas an (ARP, Broadcasts). Bleibt der Ethernet-Empfang 15 s lang aus,
+// haengt der Treiber (beobachtet nach Speicherengpass bei hoher Last) - dann Ethernet neu starten.
+void checkLanStall() {
+  static uint32_t lastRx = 0;
+  static uint32_t lastChangeMs = 0;
+  const uint32_t rx = __atomic_load_n(&lanRxBytes, __ATOMIC_RELAXED);
+  if (bridgeMode != MODE_AP_BRIDGE || !ethernetLanReady || !ethernetLinkUp || rx != lastRx) {
+    lastRx = rx;
+    lastChangeMs = millis();
+    return;
+  }
+  if (millis() - lastChangeMs < 15000) return;
+  lastChangeMs = millis();
+  lanRestarts = lanRestarts + 1;
+  Serial.printf("!! Ethernet: seit 15 s nichts empfangen (RAM frei %u, min. %u) - Ethernet wird neu gestartet\n",
+                static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()));
+  esp_eth_stop(ethernetHandle);
+  bool promiscuous = true;
+  esp_eth_ioctl(ethernetHandle, ETH_CMD_S_PROMISCUOUS, &promiscuous);
+  if (esp_eth_start(ethernetHandle) == ESP_OK) ethernetLanReady = true;
+  else Serial.println("!! Ethernet konnte nicht neu gestartet werden");
+}
+
 void updateLanRates() {
   static uint32_t lastMs = 0;
   static uint32_t lastRx = 0;
@@ -4411,6 +4436,7 @@ void loop() {
   webServer.handleClient();
   logDiagnostics();
   updateLanRates();
+  checkLanStall();
   displayLoop();
   buttonLoop();
   updateCpuLoad();

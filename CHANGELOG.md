@@ -13,6 +13,15 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.14.5] – 2026-11-03
+
+### Fixed
+- **Access Point (Bridge): Ethernet hung after a speed test.** Under full load, free memory had dropped
+  to ~44 KB; after that Ethernet received nothing (the bridge and the WiFi devices were no longer
+  reachable from the home network). The queue is now smaller (24 frames), and below 60 KB of free memory
+  no more frames are buffered. In addition, a watchdog restarts Ethernet when nothing has been received
+  for 15 s (serial message, counter `lanRestarts` in the status data).
+
 ## [3.14.4] – 2026-11-03
 
 ### Fixed
