@@ -243,7 +243,11 @@ class TftGfx : public Gfx {
   int width() const override { return config_.width; }
   int height() const override { return config_.height; }
   void clear() override { if (buffer_) memset(buffer_, 0, config_.width * config_.height / 2); }
-  void power(bool on) override { command(on ? 0x29 : 0x28); }
+  void power(bool on) override {  // aus: auch die Hintergrundbeleuchtung (falls per PWM-Pin angeschlossen)
+    powered_ = on;
+    command(on ? 0x29 : 0x28);
+    applyBrightness();
+  }
   void dim(bool dimmed) override { dimmed_ = dimmed; applyBrightness(); }
   void setBrightness(uint8_t percent) override { brightness_ = percent; applyBrightness(); }
   bool hasBacklight() const { return backlight_ >= 0; }
@@ -318,7 +322,7 @@ class TftGfx : public Gfx {
       const uint16_t b = (v & 0x1F) * colorLevel / 100;
       scaled_[i] = static_cast<uint16_t>((r << 11) | (g << 5) | b);
     }
-    if (backlight_ >= 0) ledcWrite(backlight_, static_cast<uint32_t>(level * 255 / 100));
+    if (backlight_ >= 0) ledcWrite(backlight_, powered_ ? static_cast<uint32_t>(level * 255 / 100) : 0);
   }
 
   uint8_t madctl() const {  // Querformat: MV + MX (bzw. MV + MY bei 180 Grad), dazu RGB/BGR
@@ -381,6 +385,7 @@ class TftGfx : public Gfx {
   int cs_ = -1;
   int rst_ = -1;
   bool dimmed_ = false;
+  bool powered_ = true;
   uint8_t brightness_ = 100;
   int backlight_ = -1;
   uint16_t palette_[C_COUNT] = {};

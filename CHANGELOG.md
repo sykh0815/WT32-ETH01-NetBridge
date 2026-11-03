@@ -13,6 +13,17 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.14.1] – 2026-11-03
+
+### Fixed
+- **TFT: backlight** now turns off together with the display (setting, button, night mode "off") when
+  it is connected to IO17. Before, only the panel was switched off and the backlight stayed on; the
+  brightness slider and dimming no longer turn it on while the display is off.
+- **Emergency reset** (power off/on 3 times) often did not work: when the power is cut only briefly, the
+  voltage just drops below the brownout threshold, the ESP32 reports "brownout" instead of "power on"
+  and the counter was reset. Both count now. The serial output shows "Notfall-Reset: Start N von 3" at
+  startup.
+
 ## [3.14] – 2026-10-19
 
 ### Added

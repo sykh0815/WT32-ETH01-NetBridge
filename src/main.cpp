@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.14";
+constexpr char FIRMWARE_VERSION[] = "3.14.1";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -4202,8 +4202,12 @@ void setup() {
   preferences.begin("bridge", false);
 
   // Notfall-Reset: 3x hintereinander Strom aus/an (jeweils < 10 s) setzt die Betriebsart auf NAT zurueck.
+  // Bei kurzem Trennen sinkt die Spannung oft nur unter die Brownout-Schwelle (Kondensatoren, Netzteil),
+  // dann meldet der ESP32 BROWNOUT statt POWERON - beides zaehlt als Aus-/Einschalten.
+  const esp_reset_reason_t bootReason = esp_reset_reason();
   uint8_t quickBoots = preferences.getUChar("boots", 0);
-  quickBoots = (esp_reset_reason() == ESP_RST_POWERON) ? quickBoots + 1 : 0;
+  quickBoots = (bootReason == ESP_RST_POWERON || bootReason == ESP_RST_BROWNOUT) ? quickBoots + 1 : 0;
+  Serial.printf("Notfall-Reset: Start %d von 3 (Grund: %s)\n", quickBoots, resetReasonText(bootReason));
   if (quickBoots >= 3) {
     preferences.putUChar("mode", MODE_NAT);
     preferences.remove("web_hash");  // Passwortschutz des Webinterface entfernen (Passwort vergessen)

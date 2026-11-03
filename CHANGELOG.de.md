@@ -14,6 +14,17 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.14.1] – 03.11.2026
+
+### Behoben
+- **TFT: Hintergrundbeleuchtung** geht jetzt mit dem Display aus (Einstellung, Taster, Nachtmodus „aus“),
+  wenn sie an IO17 angeschlossen ist. Bisher wurde nur die Anzeige abgeschaltet, die Beleuchtung blieb an;
+  auch Helligkeitsregler und Abdunkeln schalten sie bei ausgeschaltetem Display nicht mehr ein.
+- **Notfall-Reset** (3-mal Strom aus/an) funktionierte oft nicht: Bei kurzem Trennen fällt die Spannung
+  nur unter die Brownout-Schwelle, der ESP32 meldet dann „Brownout“ statt „Stromversorgung eingeschaltet“
+  und der Zähler wurde zurückgesetzt. Beides zählt jetzt. Die serielle Ausgabe zeigt beim Start
+  „Notfall-Reset: Start N von 3“.
+
 ## [3.14] – 19.10.2026
 
 ### Neu

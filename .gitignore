@@ -2,3 +2,6 @@
 .vscode/
 .DS_Store
 dist/
+logs/
+CLAUDE.local.md
+__pycache__/
