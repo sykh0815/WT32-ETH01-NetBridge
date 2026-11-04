@@ -14,6 +14,13 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.20.0] – 04.11.2026
+
+### Geändert
+- **Access Point-Betriebsarten: kein 802.11b mehr** (nur g/n). Beacons und Broadcasts werden dadurch mit
+  6 statt 1 Mbit/s gesendet und belegen die Funkstrecke kürzer; das schafft etwas mehr Durchsatz.
+  Geräte, die ausschließlich 802.11b können, verbinden sich nicht mehr.
+
 ## [3.19.1] – 04.11.2026
 
 ### Geändert

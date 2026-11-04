@@ -13,6 +13,13 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.20.0] – 2026-11-04
+
+### Changed
+- **Access point modes: no more 802.11b** (g/n only). Beacons and broadcasts are therefore sent at 6
+  instead of 1 Mbit/s and occupy the radio link for less time, which gives slightly more throughput.
+  Devices that only support 802.11b can no longer connect.
+
 ## [3.19.1] – 2026-11-04
 
 ### Changed
