@@ -13,6 +13,16 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.21.0] – 2026-11-04
+
+### Added
+- **Home Assistant support via MQTT** (new "Home Assistant" section in the web interface, off by default):
+  enter broker, port, user, password and topic prefix – the device registers itself in Home Assistant via
+  MQTT discovery. Entities: uplink, download/upload rate, free heap, CPU load, uptime, mode, WiFi devices and
+  channel (access point modes) or WiFi signal (NAT), dropped frames and LAN restarts (AP bridge), supply
+  voltage (if enabled); a "Display" switch and a "Restart" button. A last will marks the device as
+  unavailable. Small built-in MQTT client, no external library.
+
 ## [3.20.2] – 2026-11-04
 
 ### Fixed

@@ -12,11 +12,13 @@
 #include <dhcpserver/dhcpserver.h>
 #include <freertos/queue.h>
 #include <esp_system.h>
+#include <esp_mac.h>
 #include <esp_random.h>
 #include <mbedtls/sha256.h>
 #include "oui_table.h"
 #include "display.h"
 #include "qr.h"
+#include "mqtt.h"
 #include <time.h>
 #include <nvs.h>
 #include <esp_idf_version.h>
@@ -91,6 +93,9 @@ void useCountingTransmit();
 esp_err_t onApNatUplinkInput(esp_eth_handle_t handle, uint8_t *buffer, uint32_t len, void *priv);
 String webPasswordSectionHtml();
 String displaySectionHtml();
+String mqttSectionHtml();
+String mqttBadge();
+void saveMqtt();
 void displayWake();
 extern bool displayEnglish;
 extern bool displayOn;
@@ -120,7 +125,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.20.2";
+constexpr char FIRMWARE_VERSION[] = "3.21.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1504,6 +1509,7 @@ void showHome() {
   menuItem("fw", "Firewall");
   if (!apMode) menuItem("ap", T("Einrichtungs-WLAN", "Setup WiFi"));
   menuItem("display", "Display");
+  menuItem("ha", "Home Assistant");
   menuItem("webpw", T("Passwort", "Password"));
   menu += "</nav>";
   // Skript (Flash-Literal MAIN_SCRIPT) wird beim Senden direkt ausgegeben
@@ -1701,6 +1707,7 @@ void showHome() {
     out(collapsible(apForm(), "ap", SEC_ICON_WIFI, apOpen ? pill("bad", T("offen", "open")) : pill("ok", T("gesichert", "secured")), false));
   }
   out(collapsible(displaySectionHtml(), "display", SEC_ICON_DISPLAY, displayStatusPill(), false));
+  out(collapsible(mqttSectionHtml(), "ha", SEC_ICON_MODE, mqttBadge(), false));
   out(collapsible(webPasswordSectionHtml(), "webpw", SEC_ICON_LOCK, webPasswordSet() ? pill("ok", T("gesetzt", "set")) : pill("warn", T("kein Passwort", "no password")), false));
   out(footer);
   out(String("<p><small>") + T("Firmware-Version ", "Firmware version ") + FIRMWARE_VERSION + "</small></p>");
@@ -4362,6 +4369,180 @@ String prefString(const char *key, const String &fallback) {
   return preferences.isKey(key) ? preferences.getString(key, fallback) : fallback;
 }
 
+// ---------------------------------------------------------------------------
+// Home Assistant (MQTT mit Discovery)
+// ---------------------------------------------------------------------------
+
+MiniMqtt mqtt;
+bool mqttEnabled = false;
+uint16_t mqttPort = 1883;
+String mqttHost, mqttUser, mqttPass, mqttPrefix = "netbridge";
+String mqttBase, mqttNodeId;
+uint32_t mqttNextTryMs = 0, mqttLastPublishMs = 0;
+const char *mqttStatus = "";  // kurzer Zustand fuer die Anzeige
+
+void mqttLoad() {
+  mqttEnabled = preferences.getBool("mq_on", false);
+  mqttHost = prefString("mq_host", "");
+  mqttUser = prefString("mq_user", "");
+  mqttPass = prefString("mq_pass", "");
+  mqttPrefix = prefString("mq_pre", "netbridge");
+  mqttPort = preferences.isKey("mq_port") ? preferences.getUShort("mq_port", 1883) : 1883;
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_ETH);
+  char id[16];
+  snprintf(id, sizeof(id), "nb_%02x%02x%02x", mac[3], mac[4], mac[5]);
+  mqttNodeId = id;
+  mqttBase = mqttPrefix + "/" + mqttNodeId;
+}
+
+// Der ESP32 hat selbst nur eine IP, wenn er Verbindung zum Heimnetz hat
+bool mqttNetworkReady() {
+  if (bridgeMode == MODE_NAT) return wifiConnected;
+  if (!isApMode() || ethernetNetif == nullptr) return false;
+  esp_netif_ip_info_t ip{};
+  return esp_netif_get_ip_info(ethernetNetif, &ip) == ESP_OK && ip.ip.addr != 0;
+}
+
+void mqttOnMessage(const String &topic, const String &payload) {
+  if (topic == mqttBase + "/display/set") {
+    displayOn = payload == "ON";
+    preferences.putBool("disp_on", displayOn);
+    if (displayOn) displayWake();
+  } else if (topic == mqttBase + "/restart/set") {
+    restartAtMs = millis() + 1000;
+  }
+}
+
+void mqttDiscovery(const char *component, const char *object, const char *name, const String &extra) {
+  String p = String("{\"name\":\"") + name + "\",\"uniq_id\":\"" + mqttNodeId + "_" + object + "\",\"stat_t\":\"" + mqttBase + "/state\",\"avty_t\":\"" + mqttBase +
+    "/status\",\"dev\":{\"ids\":[\"" + mqttNodeId + "\"],\"name\":\"" + PRODUCT_NAME + "\",\"mf\":\"WT32-ETH01-NetBridge\",\"mdl\":\"WT32-ETH01\",\"sw\":\"" + FIRMWARE_VERSION + "\"}," + extra + "}";
+  mqtt.publish(String("homeassistant/") + component + "/" + mqttNodeId + "/" + object + "/config", p, true);
+}
+
+void mqttPublishDiscovery() {
+  auto sensor = [](const char *object, const char *name, const char *key, const char *unit, const char *cls, const char *icon = "") {
+    String e = String("\"val_tpl\":\"{{ value_json.") + key + " }}\"";
+    if (*unit) e += String(",\"unit_of_meas\":\"") + unit + "\"";
+    if (*cls) e += String(",\"dev_cla\":\"") + cls + "\"";
+    if (*icon) e += String(",\"ic\":\"") + icon + "\"";
+    e += ",\"stat_cla\":\"measurement\"";
+    mqttDiscovery("sensor", object, name, e);
+  };
+  mqttDiscovery("binary_sensor", "uplink", "Uplink", "\"val_tpl\":\"{{ value_json.link }}\",\"dev_cla\":\"connectivity\"");
+  sensor("down", "Download rate", "down", "Mbit/s", "data_rate");
+  sensor("up", "Upload rate", "up", "Mbit/s", "data_rate");
+  sensor("heap", "Free heap", "heap", "kB", "");
+  sensor("cpu", "CPU load", "cpu", "%", "");
+  mqttDiscovery("sensor", "uptime", "Uptime", "\"val_tpl\":\"{{ value_json.uptime }}\",\"unit_of_meas\":\"s\",\"dev_cla\":\"duration\",\"ent_cat\":\"diagnostic\"");
+  mqttDiscovery("sensor", "mode", "Mode", "\"val_tpl\":\"{{ value_json.mode }}\",\"ent_cat\":\"diagnostic\",\"ic\":\"mdi:lan\"");
+  if (isApMode()) {
+    sensor("clients", "WiFi devices", "clients", "", "", "mdi:devices");
+    sensor("channel", "WiFi channel", "channel", "", "", "mdi:wifi");
+  } else {
+    sensor("rssi", "WiFi signal", "rssi", "dBm", "signal_strength");
+  }
+  if (bridgeMode == MODE_AP_BRIDGE) {
+    mqttDiscovery("sensor", "drops", "Dropped frames", "\"val_tpl\":\"{{ value_json.drops }}\",\"stat_cla\":\"total_increasing\",\"ent_cat\":\"diagnostic\"");
+    mqttDiscovery("sensor", "lan_restarts", "LAN restarts", "\"val_tpl\":\"{{ value_json.lan_restarts }}\",\"stat_cla\":\"total_increasing\",\"ent_cat\":\"diagnostic\"");
+  }
+  if (vmonEnabled) sensor("voltage", "Supply voltage", "voltage", "V", "voltage");
+  mqttDiscovery("switch", "display", "Display", String("\"val_tpl\":\"{{ value_json.display }}\",\"cmd_t\":\"") + mqttBase + "/display/set\",\"ic\":\"mdi:monitor\"");
+  mqttDiscovery("button", "restart", "Restart", String("\"cmd_t\":\"") + mqttBase + "/restart/set\",\"dev_cla\":\"restart\",\"payload_press\":\"PRESS\"");
+}
+
+void mqttPublishState() {
+  const bool ap = isApMode();
+  String s = String("{\"link\":\"") + (ethernetLinkUp ? "ON" : "OFF") + "\",\"down\":" + String((ap ? lanRxRate : lanTxRate) / 1e6f, 2) + ",\"up\":" + String((ap ? lanTxRate : lanRxRate) / 1e6f, 2) +
+    ",\"heap\":" + String(ESP.getFreeHeap() / 1024) + ",\"cpu\":" + String(cpuLoad[0] < 0 ? 0 : static_cast<int>((cpuLoad[0] + cpuLoad[1]) / 2 + 0.5f)) + ",\"uptime\":" + String(static_cast<unsigned long>(millis() / 1000)) + ",\"mode\":\"" + modeKey() +
+    "\",\"display\":\"" + (displayOn ? "ON" : "OFF") + "\",\"clients\":" + String(ap ? WiFi.softAPgetStationNum() : 0) + ",\"channel\":" + String(apChannel) + ",\"rssi\":" + String(wifiConnected ? WiFi.RSSI() : 0) +
+    ",\"drops\":" + String(framesDropped + dropsQueue + dropsWifi) + ",\"lan_restarts\":" + String(lanRestarts);
+  if (vmonEnabled) s += ",\"voltage\":" + String(supplyVoltage(), 2);
+  mqtt.publish(mqttBase + "/state", s + "}");
+}
+
+void mqttLoop() {
+  if (!mqttEnabled || mqttHost.isEmpty()) return;
+  const uint32_t now = millis();
+  if (!mqtt.connected()) {
+    mqttStatus = mqttNetworkReady() ? "getrennt" : "kein Netz";
+    if (!mqttNetworkReady() || static_cast<int32_t>(now - mqttNextTryMs) < 0) return;
+    mqttNextTryMs = now + 20000;
+    if (mqtt.connect(mqttHost.c_str(), mqttPort, mqttNodeId, mqttUser, mqttPass, mqttBase + "/status", "offline")) {
+      mqttStatus = "verbunden";
+      Serial.printf("Home Assistant: MQTT verbunden mit %s:%u\n", mqttHost.c_str(), mqttPort);
+      mqtt.setCallback(mqttOnMessage);
+      mqtt.subscribe(mqttBase + "/display/set");
+      mqtt.subscribe(mqttBase + "/restart/set");
+      mqttPublishDiscovery();
+      mqtt.publish(mqttBase + "/status", "online", true);
+      mqttPublishState();
+      mqttLastPublishMs = now;
+    } else {
+      mqttStatus = "Verbindung fehlgeschlagen";
+      Serial.printf("Home Assistant: MQTT-Verbindung zu %s:%u fehlgeschlagen\n", mqttHost.c_str(), mqttPort);
+    }
+    return;
+  }
+  mqttStatus = "verbunden";
+  mqtt.loop();
+  if (now - mqttLastPublishMs >= 10000) {
+    mqttLastPublishMs = now;
+    mqttPublishState();
+  }
+}
+
+String mqttBadge() {
+  if (!mqttEnabled) return pill("", T("aus", "off"));
+  if (mqtt.connected()) return pill("ok", T("verbunden", "connected"));
+  return pill("warn", T("nicht verbunden", "not connected"));
+}
+
+String mqttSectionHtml() {
+  String html = String("<h2 id='ha'>Home Assistant</h2>");
+  html += String("<p><small>") + T("Meldet Status und Datenrate per MQTT an Home Assistant (automatische Erkennung, Integration \"MQTT\"). Funktioniert, wenn das Ger&auml;t eine IP im Heimnetz hat (NAT- und Access-Point-Modi).",
+    "Reports status and data rate to Home Assistant via MQTT (automatic discovery, \"MQTT\" integration). Works when the device has an IP in the home network (NAT and access point modes).") + "</small></p>";
+  if (mqttEnabled) {
+    const char *cls = mqtt.connected() ? "ok" : "wait";
+    html += String("<p class='") + cls + "'>" + (mqtt.connected() ? T("Mit dem Broker verbunden.", "Connected to the broker.") : T("Nicht mit dem Broker verbunden.", "Not connected to the broker.")) + "</p>";
+  }
+  html += "<form method='post' action='/mqtt'>";
+  html += String("<label class='chk'><input type='checkbox' name='mq_on' value='1'") + (mqttEnabled ? " checked" : "") + "><span><b>" + T("Home Assistant (MQTT) aktivieren", "Enable Home Assistant (MQTT)") + "</b></span></label>";
+  html += String("<label>") + T("Broker (IP oder Name)", "Broker (IP or name)") + "<input name='mq_host' maxlength='63' value='" + mqttHost + "'></label>";
+  html += String("<label>Port<input name='mq_port' type='number' min='1' max='65535' value='") + String(mqttPort) + "'></label>";
+  html += String("<label>") + T("Benutzer (optional)", "User (optional)") + "<input name='mq_user' maxlength='63' autocomplete='off' value='" + mqttUser + "'></label>";
+  html += String("<label>") + T("Passwort (leer = unver&auml;ndert)", "Password (empty = unchanged)") + "<input name='mq_pass' type='password' maxlength='63' autocomplete='new-password'></label>";
+  html += String("<label>") + T("Topic-Pr&auml;fix", "Topic prefix") + "<input name='mq_pre' maxlength='32' value='" + mqttPrefix + "'></label>";
+  html += String("<button type='submit'>") + T("Speichern", "Save") + "</button></form>";
+  return html;
+}
+
+void saveMqtt() {
+  detectLanguage();
+  mqttEnabled = webServer.arg("mq_on") == "1";
+  auto clean = [](String s) { s.trim(); s.replace("\"", ""); s.replace("\\", ""); return s; };
+  mqttHost = clean(webServer.arg("mq_host"));
+  mqttUser = clean(webServer.arg("mq_user"));
+  if (webServer.arg("mq_pass").length()) mqttPass = webServer.arg("mq_pass");
+  String prefix = clean(webServer.arg("mq_pre"));
+  prefix.replace("#", ""); prefix.replace("+", ""); prefix.replace(" ", "_");
+  mqttPrefix = prefix.isEmpty() ? String("netbridge") : prefix;
+  const long port = webServer.arg("mq_port").toInt();
+  mqttPort = (port >= 1 && port <= 65535) ? static_cast<uint16_t>(port) : 1883;
+  preferences.putBool("mq_on", mqttEnabled);
+  preferences.putString("mq_host", mqttHost);
+  preferences.putString("mq_user", mqttUser);
+  preferences.putString("mq_pass", mqttPass);
+  preferences.putString("mq_pre", mqttPrefix);
+  preferences.putUShort("mq_port", mqttPort);
+  mqttBase = mqttPrefix + "/" + mqttNodeId;
+  if (mqtt.connected()) mqtt.publish(mqttBase + "/status", "offline", true);
+  mqtt.stop();  // neu verbinden mit den neuen Einstellungen
+  mqttNextTryMs = 0;
+  Serial.printf("Home Assistant: MQTT %s (%s:%u)\n", mqttEnabled ? "an" : "aus", mqttHost.c_str(), mqttPort);
+  redirectHome();
+}
+
 void setup() {
   Serial.begin(115200);
   delay(250);
@@ -4398,6 +4579,7 @@ void setup() {
 
   fwLoad();
   vmonBegin();
+  mqttLoad();
   diagIntervalMs = static_cast<uint32_t>(preferences.getUShort("diag_s", 10)) * 1000;
   Serial.println("Konsole: 'help' + Enter zeigt die Befehle (z. B. 'status')");
   if (esp_reset_reason() == ESP_RST_BROWNOUT) Serial.println("ACHTUNG: Letzter Neustart durch Unterspannung (Brownout) - Netzteil und Kabel pruefen!");
@@ -4494,6 +4676,7 @@ void setup() {
   webServer.on("/firewall", HTTP_POST, guarded<saveFirewall>);
   webServer.on("/webpass", HTTP_POST, guarded<saveWebPassword>);
   webServer.on("/display", HTTP_POST, guarded<saveDisplay>);
+  webServer.on("/mqtt", HTTP_POST, guarded<saveMqtt>);
   webServer.on("/brightness", HTTP_POST, guarded<setDisplayBrightness>);
   webServer.on("/display/frame", HTTP_GET, guarded<sendDisplayFrame>);
   webServer.on("/login", HTTP_POST, doLogin);
@@ -4591,6 +4774,7 @@ void loop() {
   displayLoop();
   buttonLoop();
   updateCpuLoad();
+  mqttLoop();
   handleConsole();
   // einmal nach dem Start den kompletten Systemstatus ausgeben
   static bool statusPrinted = false;

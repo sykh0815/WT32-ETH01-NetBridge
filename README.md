@@ -2,13 +2,13 @@
 
 🇬🇧 **English** | 🇩🇪 [Deutsch](README.de.md)
 
-[![Version](https://img.shields.io/badge/Version-3.20.2-1263a6)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-3.21.0-1263a6)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#build-and-flash)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 3.20.2** – see the [changelog](CHANGELOG.md)
+**Version 3.21.0** – see the [changelog](CHANGELOG.md)
 
 **WT32-ETH01 NetBridge** is a firmware for the **WT32-ETH01 v1.4** (ESP32 + LAN8720) that connects
 Ethernet and WiFi in both directions:
@@ -294,6 +294,10 @@ devices get their addresses directly from your router and are visible in the hom
 > time within 10 seconds. The bridge then starts in NAT mode with the setup WiFi and **all settings are reset to
 > factory defaults** (including router WiFi, passwords and firewall).
 
+## Home Assistant
+
+Section "Home Assistant" in the web interface (off by default): enter the MQTT broker, port, optional user/password and topic prefix. The device then appears in Home Assistant automatically (MQTT discovery) with uplink, data rates, free heap, CPU load, uptime, WiFi devices/channel, a "Display" switch and a "Restart" button. It needs an IP in the home network, so it works in the NAT and access point modes.
+
 ## Firewall
 
 Section "Firewall" in the web interface. It checks the traffic of the **connected devices** (device
@@ -341,7 +345,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **3.20.2** – no more NVS error messages after the factory reset.
+Current version: **3.21.0** – Home Assistant support via MQTT discovery.
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 

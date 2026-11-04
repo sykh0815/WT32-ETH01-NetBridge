@@ -14,6 +14,16 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.21.0] – 04.11.2026
+
+### Neu
+- **Home-Assistant-Anbindung per MQTT** (neuer Abschnitt „Home Assistant“ im Webinterface, standardmäßig aus):
+  Broker, Port, Benutzer, Passwort und Topic-Präfix eintragen – das Gerät meldet sich per MQTT-Discovery
+  automatisch in Home Assistant an. Entitäten: Uplink, Download-/Upload-Rate, freier Heap, CPU-Last,
+  Laufzeit, Betriebsart, WLAN-Geräte und Kanal (Access-Point-Modi) bzw. WLAN-Signal (NAT), verworfene Frames
+  und LAN-Neustarts (AP-Bridge), Versorgungsspannung (falls aktiv); Schalter „Display“ und Taste „Neustart“.
+  Last Will meldet das Gerät als „nicht verfügbar“. Eigener kleiner MQTT-Client, keine externe Bibliothek.
+
 ## [3.20.2] – 04.11.2026
 
 ### Behoben
