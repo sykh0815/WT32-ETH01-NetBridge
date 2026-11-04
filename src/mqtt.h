@@ -9,12 +9,16 @@ class MiniMqtt {
 
   void setCallback(Callback cb) { callback = cb; }
   bool connected() { return client.connected() && up; }
+  // Grund des letzten fehlgeschlagenen connect(): 0 = keine Antwort, 1 = kein TCP, 0x10+ = CONNACK-Code (+0x10)
+  int lastError = 0;
 
   bool connect(const char *host, uint16_t port, const String &id, const String &user, const String &pass,
                const String &willTopic, const char *willMessage) {
     stop();
     client.setTimeout(3);
+    lastError = 1;
     if (!client.connect(host, port, 3000)) return false;
+    lastError = 0;
     const size_t idLen = id.length(), uLen = user.length(), pLen = pass.length(), wtLen = willTopic.length(), wmLen = strlen(willMessage);
     uint8_t flags = 0x02 | 0x04 | 0x20;  // Clean Session, Will, Will Retain
     if (uLen) flags |= 0x80;
@@ -35,6 +39,7 @@ class MiniMqtt {
         uint8_t ack[4];
         client.read(ack, 4);
         up = ack[0] == 0x20 && ack[3] == 0;
+        lastError = 0x10 + ack[3];
         if (!up) stop();
         return up;
       }

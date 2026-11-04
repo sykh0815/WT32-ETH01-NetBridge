@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.23.1] – 2026-11-04
+
+### Changed
+- **Home Assistant (MQTT): diagnostics in the log.** A failed connection now logs the reason (broker not
+  reachable, no answer, user/password rejected).
+
 ## [3.23.0] – 2026-11-04
 
 ### Added

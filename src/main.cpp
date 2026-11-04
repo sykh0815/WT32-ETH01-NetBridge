@@ -127,7 +127,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.23.0";
+constexpr char FIRMWARE_VERSION[] = "3.23.1";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -4549,7 +4549,9 @@ void mqttLoop() {
       mqttLastPublishMs = now;
     } else {
       mqttStatus = "Verbindung fehlgeschlagen";
-      Serial.printf("Home Assistant: MQTT-Verbindung zu %s:%u fehlgeschlagen\n", mqttHost.c_str(), mqttPort);
+      const int err = mqtt.lastError;
+      Serial.printf("Home Assistant: MQTT-Verbindung zu %s:%u fehlgeschlagen (%s)\n", mqttHost.c_str(), mqttPort,
+        err == 1 ? "Broker nicht erreichbar" : err == 0 ? "keine Antwort des Brokers" : err == 0x15 ? "Benutzer/Passwort abgelehnt" : err == 0x14 ? "Benutzer/Passwort falsch" : "vom Broker abgelehnt");
     }
     return;
   }
