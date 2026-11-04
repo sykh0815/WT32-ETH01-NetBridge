@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.23.0] – 04.11.2026
+
+### Neu
+- **WLAN-Geräte abmelden:** `POST /api/kick?mac=…` trennt ein verbundenes WLAN-Gerät (Access-Point-Modi). Die
+  HACS-Integration zeigt dafür jedes Gerät einzeln mit einer Taste „Abmelden“.
+
 ## [3.22.1] – 04.11.2026
 
 ### Behoben

@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.23.0] – 2026-11-04
+
+### Added
+- **Disconnect WiFi devices:** `POST /api/kick?mac=…` disconnects a connected WiFi device (access point modes).
+  The HACS integration shows every device separately with a "Disconnect" button.
+
 ## [3.22.1] – 2026-11-04
 
 ### Fixed

@@ -127,7 +127,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.22.1";
+constexpr char FIRMWARE_VERSION[] = "3.23.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -4494,6 +4494,24 @@ void apiDisplay() {
   apiState();
 }
 
+// WLAN-Geraet abmelden (Access-Point-Modi): /api/kick?mac=aa:bb:cc:dd:ee:ff
+void apiKick() {
+  unsigned m[6];
+  uint8_t mac[6];
+  uint16_t aid = 0;
+  if (!isApMode() || sscanf(webServer.arg("mac").c_str(), "%x:%x:%x:%x:%x:%x", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]) != 6) {
+    webServer.send(400, "application/json", "{\"error\":\"bad request\"}");
+    return;
+  }
+  for (int i = 0; i < 6; ++i) mac[i] = static_cast<uint8_t>(m[i]);
+  if (esp_wifi_ap_get_sta_aid(mac, &aid) != ESP_OK || esp_wifi_deauth_sta(aid) != ESP_OK) {
+    webServer.send(404, "application/json", "{\"error\":\"not connected\"}");
+    return;
+  }
+  Serial.printf("WLAN-Geraet abgemeldet (Home Assistant): %s\n", webServer.arg("mac").c_str());
+  webServer.send(200, "application/json", "{\"kicked\":true}");
+}
+
 void apiRestart() {
   restartAtMs = millis() + 1000;
   webServer.send(200, "application/json", "{\"restart\":true}");
@@ -4732,6 +4750,7 @@ void setup() {
   webServer.on("/api/state", HTTP_GET, guarded<apiState>);
   webServer.on("/api/display", HTTP_POST, guarded<apiDisplay>);
   webServer.on("/api/restart", HTTP_POST, guarded<apiRestart>);
+  webServer.on("/api/kick", HTTP_POST, guarded<apiKick>);
   webServer.on("/brightness", HTTP_POST, guarded<setDisplayBrightness>);
   webServer.on("/display/frame", HTTP_GET, guarded<sendDisplayFrame>);
   webServer.on("/login", HTTP_POST, doLogin);

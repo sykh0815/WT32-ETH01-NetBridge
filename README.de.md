@@ -2,13 +2,13 @@
 
 🇬🇧 [English](README.md) | 🇩🇪 **Deutsch**
 
-[![Version](https://img.shields.io/badge/Version-3.22.1-1263a6)](CHANGELOG.de.md)
+[![Version](https://img.shields.io/badge/Version-3.23.0-1263a6)](CHANGELOG.de.md)
 [![Plattform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#bauen-und-flashen)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 3.22.1** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
+**Version 3.23.0** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
 
 **WT32-ETH01 NetBridge** ist eine Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die Ethernet und
 WLAN in beide Richtungen verbindet:
@@ -350,7 +350,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **3.22.1** – MQTT-Verbindung bleibt jetzt stabil (Keep-Alive).
+Aktuelle Version: **3.23.0** – WLAN-Geräte lassen sich aus Home Assistant abmelden.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 
