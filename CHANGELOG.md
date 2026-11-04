@@ -13,6 +13,17 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.16.0] – 2026-11-04
+
+### New
+- **Access point: channel selection at startup.** At startup the bridge scans the 2.4 GHz environment and
+  picks the quietest of channels 1, 6 and 11 (it always used channel 1 before). The result is shown in the
+  serial output ("AP-Kanal: …") and as `apChannel` in the status data. Startup takes a few seconds longer.
+
+### Changed
+- Access Point (Bridge): frames to WiFi devices are retried for at most 20 ms (was 100 ms). This keeps
+  latency low when the WiFi driver has no free TX buffer for a moment.
+
 ## [3.15.3] – 2026-11-04
 
 ### Changed

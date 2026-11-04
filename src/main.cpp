@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.15.3";
+constexpr char FIRMWARE_VERSION[] = "3.16.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -246,6 +246,7 @@ volatile uint32_t dropsWifi = 0;   // AP-Bridge: verworfen, weil der WLAN-Treibe
 volatile int lastWifiTxError = 0;
 volatile uint32_t groupsLimited = 0;
 volatile uint32_t groupsFiltered = 0;
+uint8_t apChannel = 1;  // WLAN-Kanal des Access Points (beim Start nach der ruhigsten Funkumgebung gewaehlt)
 uint32_t lanRestarts = 0;  // AP-Bridge: Ethernet nach Empfangsstillstand neu gestartet  // AP-Bridge: Broadcast/Multicast wegen der Ratenbegrenzung nicht ins WLAN
 
 // ---------------------------------------------------------------------------
@@ -1126,7 +1127,7 @@ String lanStatusJson() {
   if (bridgeMode == MODE_BRIDGE) json += ",\"staMac\":\"" + macToString(staMac) + "\"";
   if (bridgeMode == MODE_BRIDGE || bridgeMode == MODE_AP_BRIDGE) {
     json += ",\"toWifi\":" + String(framesToWifi) + ",\"toLan\":" + String(framesToLan) + ",\"dropped\":" + String(framesDropped);
-    if (bridgeMode == MODE_AP_BRIDGE) json += ",\"dropsQueue\":" + String(dropsQueue) + ",\"dropsWifi\":" + String(dropsWifi) + ",\"wifiTxError\":" + String(lastWifiTxError) + ",\"groupsFiltered\":" + String(groupsFiltered) + ",\"groupsLimited\":" + String(groupsLimited) + ",\"lanRestarts\":" + String(lanRestarts);
+    if (bridgeMode == MODE_AP_BRIDGE) json += ",\"dropsQueue\":" + String(dropsQueue) + ",\"dropsWifi\":" + String(dropsWifi) + ",\"wifiTxError\":" + String(lastWifiTxError) + ",\"apChannel\":" + String(apChannel) + ",\"groupsFiltered\":" + String(groupsFiltered) + ",\"groupsLimited\":" + String(groupsLimited) + ",\"lanRestarts\":" + String(lanRestarts);
   }
   uint32_t leaseMinutes = 0;
   // Nur im NAT-Modus hat die Ethernet-Schnittstelle einen DHCP-Server (im AP-NAT-Modus ist sie DHCP-Client)
@@ -2440,9 +2441,9 @@ void apForwardTask(void *argument) {
   for (;;) {
     if (xQueueReceive(apForwardQueue, &frame, portMAX_DELAY) != pdTRUE) continue;
     int result = -1;
-    // Bei vollem Sendepuffer jede Millisekunde erneut versuchen (hoechstens 100 ms), sonst sofort aufgeben.
+    // Bei vollem Sendepuffer jede Millisekunde erneut versuchen (hoechstens 20 ms), sonst sofort aufgeben.
     // Broadcast/Multicast nur einmal: sie sollen die Nutzdaten nicht aufhalten.
-    const int attempts = (frame.data[0] & 0x01) ? 1 : 100;
+    const int attempts = (frame.data[0] & 0x01) ? 1 : 20;
     for (int attempt = 0; attempt < attempts; ++attempt) {
       result = esp_wifi_internal_tx(WIFI_IF_AP, frame.data, frame.len);
       if (result != ESP_ERR_NO_MEM || attempt + 1 == attempts) break;
@@ -4281,6 +4282,31 @@ void handleConsole() {
 
 // ---------------------------------------------------------------------------
 
+// Access Point: den ruhigsten der Kanaele 1, 6, 11 waehlen. Fremde Netze auf demselben oder einem
+// ueberlappenden Kanal stoeren (Wiederholungen, hohe Latenz); der Kanal 1 ist oft der vollste.
+uint8_t pickApChannel() {
+  WiFi.mode(WIFI_MODE_STA);
+  WiFi.disconnect();
+  const int found = WiFi.scanNetworks(false, true);
+  if (found < 0) return 1;
+  float load[14] = {};
+  for (int i = 0; i < found; ++i) {
+    const int channel = WiFi.channel(i);
+    const float power = powf(10.0f, (WiFi.RSSI(i) + 100) / 10.0f);
+    for (int c = 1; c <= 13; ++c) {
+      const int distance = abs(c - channel);
+      if (distance < 5) load[c] += power * (5 - distance) / 5.0f;
+    }
+  }
+  uint8_t best = 1;
+  for (uint8_t c : {1, 6, 11}) {
+    if (load[c] < load[best]) best = c;
+  }
+  Serial.printf("AP-Kanal: %d Netze gefunden, Last Kanal 1: %.0f, 6: %.0f, 11: %.0f -> Kanal %d\n", found, load[1], load[6], load[11], best);
+  WiFi.scanDelete();
+  return best;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(250);
@@ -4337,9 +4363,10 @@ void setup() {
 
   const char *apPassword = setupApPassword.isEmpty() ? nullptr : setupApPassword.c_str();
   if (isApMode()) {
+    apChannel = pickApChannel();
     WiFi.mode(WIFI_MODE_AP);
     WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0), IPAddress((uint32_t)0), IPAddress(1, 1, 1, 1));
-    WiFi.softAP(apSsid.c_str(), apPassword, 1, 0, 8);
+    WiFi.softAP(apSsid.c_str(), apPassword, apChannel, 0, 8);
     esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);  // 20 MHz: stabiler als 40 MHz auf dem ueberfuellten 2,4-GHz-Band
     apNetif = WiFi.AP.netif();
     // Nach den Standard-Handlern registrieren: Geraeteliste, MAC-Filter, Empfangsfilter

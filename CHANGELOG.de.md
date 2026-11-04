@@ -14,6 +14,17 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.16.0] – 04.11.2026
+
+### Neu
+- **Access Point: Kanalwahl beim Start.** Die Bridge scannt beim Start die 2,4-GHz-Umgebung und nimmt den
+  ruhigsten der Kanäle 1, 6 und 11 (vorher immer Kanal 1). Das Ergebnis steht in der seriellen Ausgabe
+  („AP-Kanal: …“) und als `apChannel` in den Statusdaten. Der Start dauert dadurch einige Sekunden länger.
+
+### Geändert
+- Access Point (Bridge): Frames an WLAN-Geräte werden höchstens 20 ms (vorher 100 ms) wiederholt. Das hält
+  die Latenz niedrig, wenn der WLAN-Treiber einmal keinen Sendepuffer frei hat.
+
 ## [3.15.3] – 04.11.2026
 
 ### Geändert
