@@ -13,6 +13,13 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.14.6] – 2026-11-04
+
+### Fixed
+- **Access Point (Bridge): the web interface slowed throughput down.** The status page polled the status
+  data every 2 s; the web server shares a core with the forwarding. In this mode it now polls only every
+  6 s, and not at all while the browser tab is in the background.
+
 ## [3.14.5] – 2026-11-03
 
 ### Fixed

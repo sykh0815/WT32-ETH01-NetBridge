@@ -14,6 +14,13 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.14.6] – 04.11.2026
+
+### Behoben
+- **Access Point (Bridge): Webinterface bremste den Durchsatz.** Die Statusseite fragte alle 2 s die
+  Statusdaten ab; der Webserver läuft auf demselben Kern wie die Weiterleitung. In dieser Betriebsart
+  wird jetzt nur noch alle 6 s abgefragt, und gar nicht, solange der Browser-Tab im Hintergrund ist.
+
 ## [3.14.5] – 03.11.2026
 
 ### Behoben
