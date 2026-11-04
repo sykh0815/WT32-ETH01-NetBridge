@@ -13,6 +13,19 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.18.0] – 2026-11-04
+
+### New
+- **Display in setup mode** (no router WiFi configured) alternates between: QR code to join the setup WiFi,
+  a **second QR code with the address of the setup page** (`http://192.168.4.1`), the address as text and
+  the **firmware version and MAC address**.
+- **After the factory reset** the display first shows "Factory reset" with a 10 s countdown, then setup mode.
+
+### Fixed
+- **The captive portal did not open on the iPhone.** The bridge did not reliably offer itself as the DNS
+  server via DHCP, so the redirect never reached the phone. The DNS server is now offered explicitly. Every
+  redirect is printed to the serial output for troubleshooting ("Captive Portal: …").
+
 ## [3.17.2] – 2026-11-04
 
 ### Fixed

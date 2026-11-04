@@ -14,6 +14,19 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.18.0] – 04.11.2026
+
+### Neu
+- **Display im Einrichtungsmodus** (kein Router-WLAN eingetragen) zeigt im Wechsel: QR-Code zum Verbinden mit
+  dem Einrichtungs-WLAN, **zweiten QR-Code mit der Adresse der Einrichtungsseite** (`http://192.168.4.1`),
+  die Adresse als Text sowie **Firmware-Version und MAC-Adresse**.
+- **Nach dem Werksreset** zeigt das Display zuerst „Werksreset“ mit Rückwärtszähler (10 s), dann den Einrichtungsmodus.
+
+### Behoben
+- **Captive Portal öffnete sich auf dem iPhone nicht.** Die Bridge bot per DHCP nicht sicher sich selbst als
+  DNS-Server an; die Umleitung erreichte das Handy dann nie. Der DNS-Server wird jetzt ausdrücklich angeboten.
+  Jede Umleitung steht zur Fehlersuche in der seriellen Ausgabe („Captive Portal: …“).
+
 ## [3.17.2] – 04.11.2026
 
 ### Behoben

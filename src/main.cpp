@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.17.2";
+constexpr char FIRMWARE_VERSION[] = "3.18.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1366,6 +1366,7 @@ bool captiveRedirect() {
   if ((remote & 0x00FFFFFFu) != 0x0004A8C0u) return false;  // nur Geraete aus 192.168.4.x
   const String host = webServer.hostHeader();
   if (host == "192.168.4.1" || host.startsWith("192.168.4.1:")) return false;
+  Serial.printf("Captive Portal: %s%s -> Einrichtungsseite\n", host.c_str(), webServer.uri().c_str());
   webServer.sendHeader("Location", "http://192.168.4.1/");
   webServer.sendHeader("Cache-Control", "no-store");
   webServer.send(302, "text/plain", "");
@@ -3431,8 +3432,24 @@ String wifiQrText() {
 }
 
 // Seite "QR-Code": Handy-Kamera darauf richten und mit dem WLAN verbinden
-void displayPageQr() {
-  const String source = wifiQrText();
+// Einrichtungsmodus: Version und MAC-Adresse, damit man die Bridge im Router wiederfindet
+void displayPageSetupInfo(int top) {
+  const bool big = displayBig();
+  const String mac = WiFi.macAddress();
+  if (big) {
+    gfx->text(4, top + 6, "Firmware", 1, C_GREY);
+    gfx->text(4, top + 18, FIRMWARE_VERSION, 2, C_WHITE);
+    gfx->text(4, top + 42, DT("MAC-Adresse", "MAC address"), 1, C_GREY);
+    displayFit(4, top + 54, mac, 1, C_WHITE);
+    return;
+  }
+  const String firmware = String("Firmware ") + FIRMWARE_VERSION;
+  gfx->text(0, 14, firmware.c_str(), 1, C_WHITE);
+  gfx->text(0, 26, mac.c_str(), 1, C_GREY);
+}
+
+void displayPageQr(bool url = false) {
+  const String source = url ? String("http://192.168.4.1/") : wifiQrText();  // url: Einrichtungsseite statt WLAN-Zugang
   if (source != displayQrSource) {  // nur neu berechnen, wenn sich Name/Passwort geaendert haben
     displayQrSource = source;
     if (!displayQrCode.encode(source.c_str())) displayQrSource = "";
@@ -3460,9 +3477,9 @@ void displayPageQr() {
   if (!text) return;
   const int tx = qrPixels + 4;
   const bool big = displayBig();
-  gfx->text(tx, big ? 8 : 2, isApMode() ? "WLAN" : DT("Setup-WLAN", "Setup WiFi"), 1, C_GREY);
+  gfx->text(tx, big ? 8 : 2, url ? DT("Webseite", "Web page") : isApMode() ? "WLAN" : DT("Setup-WLAN", "Setup WiFi"), 1, C_GREY);
   // WLAN-Name umbrechen (Platz rechts neben dem Code)
-  String name = apSsid;
+  String name = url ? String("192.168.4.1") : apSsid;
   int y = big ? 22 : 14;
   while (!name.isEmpty() && y < h - 20) {
     int n = name.length();
@@ -3472,7 +3489,7 @@ void displayPageQr() {
     y += 10;
   }
   gfx->text(tx, h - (big ? 22 : 18), DT("Kamera", "Scan to"), 1, C_GREEN);
-  gfx->text(tx, h - (big ? 12 : 9), DT("scannen", "connect"), 1, C_GREEN);
+  gfx->text(tx, h - (big ? 12 : 9), url ? DT("oeffnen", "open") : DT("scannen", "connect"), 1, C_GREEN);
 }
 
 // Taster: kurz = naechste Seite (30 s), lang = Display an/aus. Weckt das Display und hebt den Nachtmodus auf.
@@ -3645,6 +3662,15 @@ void displayLoop() {
     tftDev.keepAlive();
   }
 
+  // Nach dem Werksreset: erst die Meldung mit Rueckwaertszaehler, dann der Einrichtungsmodus
+  if (recoveryTriggered && now < 10000) {
+    displayNotifyTitle = DT("Werksreset", "Factory reset");
+    displayNotifyText = String(DT("Einrichtung in ", "Setup in ")) + String((10000 - now + 999) / 1000) + " s";
+    displayNotifyColor = C_GREEN;
+    displayDrawNotify();
+    gfx->show();
+    return;
+  }
   const String problem = displayProblem();
   if (displayNotifyUntil != 0 && static_cast<int32_t>(now - displayNotifyUntil) < 0) {
     displayDrawNotify();
@@ -3660,7 +3686,9 @@ void displayLoop() {
   const bool setupState = bridgeMode == MODE_NAT && routerSsid.isEmpty();  // frisch oder nach Werksreset: noch kein Router-WLAN
   if (displayPageMode == 0 && setupState) {
     list[count++] = 5;  // QR-Code zum Verbinden mit dem Einrichtungs-WLAN
-    list[count++] = 0;  // danach die Adresse der Einrichtungsseite
+    list[count++] = 7;  // QR-Code der Einrichtungsseite (nach dem Verbinden scannen)
+    list[count++] = 0;  // Adresse der Einrichtungsseite als Text
+    list[count++] = 8;  // Version und MAC-Adresse
   } else if (displayPageMode == 0) {
     for (int p = 0; p <= 4; ++p) list[count++] = p;
     if (displayQr) list[count++] = 5;
@@ -3690,8 +3718,8 @@ void displayLoop() {
   gfx->clear();
   const uint32_t minute = now / 60000;
   if (!gfx->isColor()) gfx->setOffset(static_cast<int>(minute % 3), static_cast<int>((minute / 3) % 2));  // OLED-Einbrennschutz: 0-2 Pixel
-  if (page == 5) {  // QR-Code: ganze Flaeche, ohne Kopfzeile
-    displayPageQr();
+  if (page == 5 || page == 7) {  // QR-Code: ganze Flaeche, ohne Kopfzeile
+    displayPageQr(page == 7);
     gfx->show();
     return;
   }
@@ -3702,6 +3730,7 @@ void displayLoop() {
   else if (page == 2) displayPageWifi(top);
   else if (page == 3) displayPageSystem(top);
   else if (page == 4) displayPageToday(top);
+  else if (page == 8) displayPageSetupInfo(top);
   else if (big) {
     displayFit(4, top + 10, String(DT("Achtung", "Warning")), 3, C_RED);
     displayFit(4, top + 42, problem, 2, C_WHITE);
@@ -4398,6 +4427,17 @@ void setup() {
     // DNS-Server fuer die Geraete im Einrichtungs-WLAN ist die Bridge selbst (Captive Portal)
     WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0), IPAddress((uint32_t)0), IPAddress(192, 168, 4, 1));
     WiFi.softAP(apSsid.c_str(), apPassword);
+    {  // DHCP muss die Bridge als DNS-Server anbieten, sonst erreicht die Umleitung des Captive Portals das iPhone nie
+      esp_netif_t *netif = WiFi.AP.netif();
+      esp_netif_dns_info_t dns{};
+      dns.ip.type = ESP_IPADDR_TYPE_V4;
+      dns.ip.u_addr.ip4.addr = static_cast<uint32_t>(IPAddress(192, 168, 4, 1));
+      esp_netif_dhcps_stop(netif);
+      esp_netif_set_dns_info(netif, ESP_NETIF_DNS_MAIN, &dns);
+      dhcps_offer_t offerDns = OFFER_DNS;
+      esp_netif_dhcps_option(netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &offerDns, sizeof(offerDns));
+      esp_netif_dhcps_start(netif);
+    }
     // Captive Portal nur im Einrichtungs-WLAN der Client-Betriebsarten. In den Access-Point-Modi ist das
     // WLAN ein normales Netz fuer Geraete, dort muss DNS ganz normal funktionieren.
     dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
