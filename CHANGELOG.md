@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.15.3] – 2026-11-04
+
+### Changed
+- **Access point modes: WiFi channel width fixed to 20 MHz** (40 MHz was possible before). 40 MHz is more
+  prone to interference on the crowded 2.4 GHz band and can cause retransmissions and losses.
+
 ## [3.15.2] – 2026-11-04
 
 ### Fixed

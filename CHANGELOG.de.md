@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.15.3] – 04.11.2026
+
+### Geändert
+- **Access Point-Betriebsarten: WLAN-Kanalbreite fest 20 MHz** (vorher 40 MHz möglich). 40 MHz ist auf dem
+  überfüllten 2,4-GHz-Band störanfälliger und kann Übertragungswiederholungen und Verluste verursachen.
+
 ## [3.15.2] – 04.11.2026
 
 ### Behoben
