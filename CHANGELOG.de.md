@@ -14,6 +14,17 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.17.2] – 04.11.2026
+
+### Behoben
+- **Display nach dem Notfall-Reset dunkel:** Der Werksreset hatte auch den Displaytyp gelöscht. Hardware-
+  Einstellungen (Displaytyp, Ausrichtung, TFT-Anpassungen, Spannungsmessung) bleiben jetzt erhalten.
+
+### Neu
+- **Einrichtungsmodus am Display:** Solange kein Router-WLAN eingetragen ist (frische Bridge oder nach dem
+  Werksreset), zeigt das Display abwechselnd den **QR-Code zum Verbinden** mit dem Einrichtungs-WLAN und die
+  **Adresse der Einrichtungsseite**.
+
 ## [3.17.1] – 04.11.2026
 
 ### Geändert

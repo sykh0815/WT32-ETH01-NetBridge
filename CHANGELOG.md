@@ -13,6 +13,17 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.17.2] – 2026-11-04
+
+### Fixed
+- **Display dark after the emergency reset:** the factory reset had also erased the display type. Hardware
+  settings (display type, orientation, TFT adjustments, voltage monitoring) are now kept.
+
+### New
+- **Setup mode on the display:** as long as no router WiFi is configured (fresh bridge or after a factory
+  reset) the display alternates between the **QR code to join** the setup WiFi and the **address of the
+  setup page**.
+
 ## [3.17.1] – 2026-11-04
 
 ### Changed

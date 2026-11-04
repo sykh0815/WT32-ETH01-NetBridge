@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.17.1";
+constexpr char FIRMWARE_VERSION[] = "3.17.2";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -3657,7 +3657,11 @@ void displayLoop() {
   const uint32_t slot = now / (static_cast<uint32_t>(displayInterval) * 1000);
   int list[8];
   int count = 0;
-  if (displayPageMode == 0) {
+  const bool setupState = bridgeMode == MODE_NAT && routerSsid.isEmpty();  // frisch oder nach Werksreset: noch kein Router-WLAN
+  if (displayPageMode == 0 && setupState) {
+    list[count++] = 5;  // QR-Code zum Verbinden mit dem Einrichtungs-WLAN
+    list[count++] = 0;  // danach die Adresse der Einrichtungsseite
+  } else if (displayPageMode == 0) {
     for (int p = 0; p <= 4; ++p) list[count++] = p;
     if (displayQr) list[count++] = 5;
   } else {
@@ -4320,7 +4324,19 @@ void setup() {
   quickBoots = (bootReason == ESP_RST_POWERON || bootReason == ESP_RST_BROWNOUT) ? quickBoots + 1 : 0;
   Serial.printf("Notfall-Reset: Start %d von 3 (Grund: %s)\n", quickBoots, resetReasonText(bootReason));
   if (quickBoots >= 3) {
-    preferences.clear();  // Werkseinstellung: Betriebsart, Router-WLAN, Firewall, Display, Passwoerter, Namen
+    // Werkseinstellung: Betriebsart, Router-WLAN, Firewall, Passwoerter, Namen. Erhalten bleibt, was die
+    // angeschlossene Hardware beschreibt (Displaytyp und -ausrichtung, Spannungsmessung); sonst bleibt das Display nach dem Reset dunkel.
+    const char *keepU8[] = {"disp_type", "tft_offx", "tft_offy"};
+    const char *keepBool[] = {"disp_flip", "tft_bgr", "tft_bl", "tft_inv", "vmon_on"};
+    uint8_t keptU8[3] = {};
+    bool keptU8Valid[3] = {}, keptBool[5] = {}, keptBoolValid[5] = {}, keptRatioValid = preferences.isKey("vmon_ratio");
+    const float keptRatio = preferences.getFloat("vmon_ratio", 2.0f);
+    for (int i = 0; i < 3; ++i) if ((keptU8Valid[i] = preferences.isKey(keepU8[i]))) keptU8[i] = preferences.getUChar(keepU8[i]);
+    for (int i = 0; i < 5; ++i) if ((keptBoolValid[i] = preferences.isKey(keepBool[i]))) keptBool[i] = preferences.getBool(keepBool[i]);
+    preferences.clear();
+    for (int i = 0; i < 3; ++i) if (keptU8Valid[i]) preferences.putUChar(keepU8[i], keptU8[i]);
+    for (int i = 0; i < 5; ++i) if (keptBoolValid[i]) preferences.putBool(keepBool[i], keptBool[i]);
+    if (keptRatioValid) preferences.putFloat("vmon_ratio", keptRatio);
     quickBoots = 0;
     recoveryTriggered = true;
     Serial.println("Notfall-Reset: alle Einstellungen auf Werkseinstellung zurueckgesetzt (NAT, Einrichtungs-WLAN)");
