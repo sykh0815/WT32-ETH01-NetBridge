@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.25.0] – 2026-11-04
+
+### Added
+- **Web interface: block WiFi devices.** Every device in the "WiFi devices" list has a "Block" button;
+  blocked devices are listed below with "Unblock" (same blocklist as in Home Assistant).
+
 ## [3.24.0] – 2026-11-04
 
 ### Added

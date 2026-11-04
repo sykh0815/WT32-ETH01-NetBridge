@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.25.0] – 04.11.2026
+
+### Neu
+- **Webinterface: WLAN-Geräte sperren.** In der Liste „WLAN-Geräte“ hat jedes Gerät eine Taste „Sperren“;
+  gesperrte Geräte stehen darunter mit „Entsperren“ (gleiche Sperrliste wie in Home Assistant).
+
 ## [3.24.0] – 04.11.2026
 
 ### Neu
