@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.22.1] – 2026-11-04
+
+### Fixed
+- **MQTT/Home Assistant: the connection dropped every 45 s.** The keep-alive ping was never sent while state
+  messages were being published; it is now sent regularly.
+
 ## [3.22.0] – 2026-11-04
 
 ### Added

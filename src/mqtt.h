@@ -28,7 +28,7 @@ class MiniMqtt {
     str(String(willMessage));
     if (uLen) str(user);
     if (uLen && pLen) str(pass);
-    lastRx = lastTx = millis();
+    lastRx = lastTx = lastPing = millis();
     const uint32_t start = millis();
     while (millis() - start < 3000) {
       if (client.available() >= 4) {
@@ -76,10 +76,11 @@ class MiniMqtt {
     uint8_t guard = 8;
     while (guard-- && client.available()) readPacket();
     const uint32_t now = millis();
-    if (up && now - lastTx > keepAlive * 500UL) {
+    // Ping unabhaengig vom Senden, damit der Broker regelmaessig antwortet (lastRx)
+    if (up && now - lastPing > keepAlive * 500UL) {
       const uint8_t ping[] = {0xC0, 0};
       client.write(ping, 2);
-      lastTx = now;
+      lastPing = lastTx = now;
     }
     if (up && now - lastRx > keepAlive * 1500UL) stop();
   }
@@ -89,7 +90,7 @@ class MiniMqtt {
   Callback callback = nullptr;
   bool up = false;
   uint16_t keepAlive = 30;
-  uint32_t lastRx = 0, lastTx = 0;
+  uint32_t lastRx = 0, lastTx = 0, lastPing = 0;
 
   void startPacket(uint8_t type, size_t remaining) {
     uint8_t buf[5];

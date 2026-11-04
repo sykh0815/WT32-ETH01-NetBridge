@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.22.1] – 04.11.2026
+
+### Behoben
+- **MQTT/Home Assistant: Verbindung brach alle 45 s ab.** Der Keep-Alive-Ping wurde nie gesendet, solange
+  Status-Meldungen liefen; jetzt wird regelmäßig gepingt.
+
 ## [3.22.0] – 04.11.2026
 
 ### Neu
