@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.19.1] – 2026-11-04
+
+### Changed
+- **Captive portal diagnostics:** the serial output now shows when a WiFi device connects and disconnects
+  (with MAC and disconnect reason), and the device IP for every captive portal redirect.
+
 ## [3.19.0] – 2026-11-04
 
 ### Changed

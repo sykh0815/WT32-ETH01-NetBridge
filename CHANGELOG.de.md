@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.19.1] – 04.11.2026
+
+### Geändert
+- **Diagnose für das Captive Portal:** Die serielle Ausgabe zeigt jetzt, wann sich ein WLAN-Gerät mit welcher MAC
+  verbindet und trennt (mit Trennungsgrund), und bei jeder Captive-Portal-Umleitung die IP des Geräts.
+
 ## [3.19.0] – 04.11.2026
 
 ### Geändert

@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.19.0";
+constexpr char FIRMWARE_VERSION[] = "3.19.1";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1366,7 +1366,7 @@ bool captiveRedirect() {
   if ((remote & 0x00FFFFFFu) != 0x0004A8C0u) return false;  // nur Geraete aus 192.168.4.x
   const String host = webServer.hostHeader();
   if (host == "192.168.4.1" || host.startsWith("192.168.4.1:")) return false;
-  Serial.printf("Captive Portal: %s%s -> Einrichtungsseite\n", host.c_str(), webServer.uri().c_str());
+  Serial.printf("Captive Portal: %s%s von %s -> Einrichtungsseite\n", host.c_str(), webServer.uri().c_str(), webServer.client().remoteIP().toString().c_str());
   // iOS/macOS: sofort eine kleine Seite statt Weiterleitung. Das Anmeldefenster zeigt sie schnell an, die grosse
   // Einrichtungsseite (ueber 50 KB) laedt erst nach dem Tippen auf die Schaltflaeche.
   if (host.indexOf("apple.com") >= 0 || host.indexOf("icloud.com") >= 0) {
@@ -2292,8 +2292,10 @@ void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, v
     }
     portEXIT_CRITICAL(&fwLock);
     noteClientConnected(info->mac);
+    Serial.printf("WLAN-Geraet verbunden: %s\n", macToString(info->mac).c_str());
   } else if (eventId == WIFI_EVENT_AP_STADISCONNECTED) {
     const wifi_event_ap_stadisconnected_t *info = static_cast<const wifi_event_ap_stadisconnected_t *>(eventData);
+    Serial.printf("WLAN-Geraet getrennt: %s (Grund %d)\n", macToString(info->mac).c_str(), info->reason);
     portENTER_CRITICAL(&fwLock);
     for (int i = 0; i < FW_MAX_STATIONS; ++i) {
       if (apStationUsed[i] && memcmp(apStationMacs[i], info->mac, 6) == 0) apStationUsed[i] = false;
