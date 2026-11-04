@@ -14,6 +14,13 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.20.1] – 04.11.2026
+
+### Entfernt
+- Die Abschaltung von 802.11b (3.20.0) wirkte nicht: Der ESP32 erlaubt für den Access Point nur b, b/g oder
+  b/g/n, „nur g/n“ liefert Fehler 258 und blieb ohne Wirkung. Der Aufruf ist entfernt. Die in 3.20.0
+  gemessene Verbesserung stammt von der anderen Kanalwahl (Kanal 6 statt 11), nicht von dieser Änderung.
+
 ## [3.20.0] – 04.11.2026
 
 ### Geändert
