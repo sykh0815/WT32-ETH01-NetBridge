@@ -14,6 +14,15 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.19.0] – 04.11.2026
+
+### Geändert
+- **Weniger RAM beim Aufruf des Webinterface:** Das Skript der Hauptseite (rund 16 KB) liegt jetzt als Literal
+  im Flash und wird beim Senden direkt ausgegeben, statt im RAM zusammengesetzt zu werden. Die Abschnitte
+  „Betriebsart“, „WLAN“ und „Router-WLAN“ entstehen erst beim Senden. Die Speicherspitze beim Seitenaufruf
+  sinkt dadurch deutlich; es bleiben größere zusammenhängende Blöcke frei (stabiler unter Last, z. B. mit
+  Speedtest bei geöffnetem Webinterface).
+
 ## [3.18.2] – 04.11.2026
 
 ### Behoben

@@ -13,6 +13,15 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.19.0] – 2026-11-04
+
+### Changed
+- **Less RAM when opening the web interface:** the main page script (about 16 KB) now lives as a literal in
+  flash and is sent directly instead of being assembled in RAM. The "Operating mode", "WiFi" and "Router
+  WiFi" sections are only built while sending. This noticeably lowers the memory peak when the page is
+  opened and leaves larger contiguous blocks free (more stable under load, e.g. a speed test with the web
+  interface open).
+
 ## [3.18.2] – 2026-11-04
 
 ### Fixed

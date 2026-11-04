@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.18.2";
+constexpr char FIRMWARE_VERSION[] = "3.19.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1384,6 +1384,65 @@ bool captiveRedirect() {
   return true;
 }
 
+// Skript der Hauptseite: reines Literal im Flash, wird beim Senden direkt ausgegeben (kein String im RAM)
+const char MAIN_SCRIPT[] =
+    "function liveOpen(){return ['lanSec','clSec','nbSec'].some(i=>{let d=document.getElementById(i);return d&&d.open;});}"
+    "function nbOpen(){let d=document.getElementById('nbSec');return d&&d.open;}"
+    "function status(){fetch('/status'+(nbOpen()?'?nb=1':'')).then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);tiles(s);showClients(s);showNeighbors(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+(w.name?w.name+' \\u2013 ':'')+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{let t=w.name||w.ip||w.mac,d=[t!=w.mac?w.mac:'',maker(w)].filter(x=>x).join(' \\u00b7 '),x=bars(w.rssi)+' '+w.rssi+' dBm'+(w.phy?' \\u00b7 '+w.phy:'')+(w.since!=null?' \\u00b7 '+L.connFor+' '+short(w.since):'')+(w.leaseLeft!=null?' \\u00b7 '+L.leaseShort+' '+(w.leaseLeft?short(w.leaseLeft):L.expired):'');h+='<div class=\\'cl\\'><div><b>'+esc(t)+'</b>'+(w.name&&w.ip?'<span>'+w.ip+'</span>':'')+'</div><small>'+d+'</small><small>'+x+'</small></div>';});c.innerHTML=h;}function esc(t){return String(t).replace(/[&<>\"']/g,c=>'&#'+c.charCodeAt(0)+';');}function short(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60);return h?h+' h '+m+' min':m?m+' min':t+' s';}function maker(w){return w.vendor?esc(w.vendor):w.private?'<span title=\\''+L.privHint+'\\'>'+L.privMac+'</span>':L.noVendor;}function bars(r){let p=Math.max(0,Math.min(100,(r+90)*100/60)),n=Math.ceil(p/25),q=p<35?'weak':p<65?'fair':'good',h='<span class=\\'mini\\'>';for(let i=0;i<4;i++)h+='<i class=\\'bar'+(i<n?' on '+q:'')+'\\' style=\\'height:'+(i+1)*25+'%\\'></i>';return h+'</span>';}"
+    "function dur(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return (h?h+' h ':'')+(h||m?m+' min ':'')+x+' s';}"
+    "var RH=[];function num(x,d){return x.toFixed(d).replace('.',L.dec);}"
+    "function rate(b){return b>=1e6?num(b/1e6,1)+' Mbit/s':b>=1e3?num(b/1e3,0)+' kbit/s':b+' bit/s';}"
+    "function size(k){return k<1024?k+' KB':k<1048576?num(k/1024,1)+' MB':num(k/1048576,2)+' GB';}"
+    "function axis(v,s){return v==0?'0':v>=1e6?num(v/1e6,s<1e6?1:0)+' Mbit/s':num(v/1e3,0)+' kbit/s';}"
+    "function spark(){let n=RH.length,m=1e5;RH.forEach(r=>{m=Math.max(m,r[0],r[1]);});"
+    "let s=Math.pow(10,Math.floor(Math.log10(m/4))),f=m/4/s;s*=f<=1?1:f<=2?2:f<=5?5:10;let top=s*Math.ceil(m/s);"
+    "let X0=80,X1=592,Y0=12,Y1=150,X=i=>(X0+(60-n+i)*(X1-X0)/59).toFixed(1),Y=v=>(Y1-v/top*(Y1-Y0)).toFixed(1),g='';"
+    "for(let v=0;v<=top;v+=s){g+='<line class=\\'gl\\' x1=\\''+X0+'\\' x2=\\''+X1+'\\' y1=\\''+Y(v)+'\\' y2=\\''+Y(v)+'\\'/><text class=\\'yl\\' x=\\''+(X0-6)+'\\' y=\\''+(+Y(v)+4)+'\\'>'+axis(v,s)+'</text>';}"
+    "let xm=(X0+X1)/2;g+='<line class=\\'vl\\' x1=\\''+xm+'\\' x2=\\''+xm+'\\' y1=\\''+Y0+'\\' y2=\\''+Y1+'\\'/>';"
+    "g+='<text class=\\'xl\\' x=\\''+X0+'\\' y=\\'168\\'>\\u2212 2 min</text><text class=\\'xl\\' x=\\''+xm+'\\' y=\\'168\\' text-anchor=\\'middle\\'>\\u2212 1 min</text><text class=\\'xl\\' x=\\''+X1+'\\' y=\\'168\\' text-anchor=\\'end\\'>'+L.now+'</text>';"
+    "let pl=j=>RH.map((r,i)=>X(i)+','+Y(r[j])).join(' '),ar=j=>n?X(0)+','+Y1+' '+pl(j)+' '+X(n-1)+','+Y1:'';"
+    "return '<svg class=\\'spark\\' viewBox=\\'0 0 600 176\\' role=\\'img\\' aria-label=\\''+L.rate+'\\'>'+g+'<polygon class=\\'adn\\' points=\\''+ar(0)+'\\'/><polygon class=\\'aup\\' points=\\''+ar(1)+'\\'/><polyline class=\\'dn\\' points=\\''+pl(0)+'\\'/><polyline class=\\'up\\' points=\\''+pl(1)+'\\'/></svg>'"
+    "+'<div class=\\'leg\\'><span><i class=\\'sw dn\\'></i>Download</span><span><i class=\\'sw up\\'></i>Upload</span><span>'+L.last2+'</span></div>';}"
+    "function ipNum(a){return a?a.split('.').reduce((x,y)=>x*256+ +y,0):1e10;}"
+    "function ago(t){return t<30?L.justNow:L.agoA+short(t)+L.agoB;}"
+    "function showNeighbors(s){let c=document.getElementById('neighbors');if(!c||!s.neighbors)return;let l=s.neighbors.slice().sort((a,b)=>ipNum(a.ip)-ipNum(b.ip));"
+    "document.getElementById('nbCount').textContent=l.length?'('+l.length+')':'';if(!l.length){c.textContent=L.noNeighbors;return;}"
+    "let h='<div class=\\'tw\\'><table class=\\'nb\\'><tr><th>'+L.ip+'</th><th>'+L.device+'</th><th>'+L.mac+'</th><th>'+L.seenCol+'</th></tr>';"
+    "l.forEach(n=>{let r=n.ip&&s.uplink&&n.ip==s.uplink.gw,nm=n.name?esc(n.name):r?L.router:'\\u2013';"
+    "h+='<tr'+(n.seen>600?' class=\\'old\\'':'')+'><td>'+(n.ip||'\\u2013')+'</td><td><b>'+nm+'</b><small>'+maker(n)+'</small></td><td class=\\'mono\\'>'+n.mac+'</td><td>'+ago(n.seen)+'</td></tr>';});"
+    "c.innerHTML=h+'</table></div>';}"
+    "function tile(id,state,text){let t=document.getElementById(id);if(!t)return;t.className='tile t-'+state;t.querySelector('b').innerHTML=text;}"
+    "function led(id,on,cls){let e=document.getElementById(id);if(e)e.setAttribute('class','led'+(on?' '+(cls||'on'):''));}"
+    "function tiles(s){let ap=!!s.uplink,l=s.lan,dn=ap?l.rxRate:l.txRate,up=ap?l.txRate:l.rxRate,busy=s.ethLink&&dn+up>20000;"
+    "tile('tLan',s.ethLink?'ok':'bad',s.ethLink?l.speed+' Mbit/s':L.noCableShort);"
+    "if(ap){let n=(s.wifiClients||[]).length;tile('tWifi',n?'ok':'idle',n==1?L.oneDevice:n+L.devices);}"
+    "else tile('tWifi',s.wifi?(s.quality=='weak'?'warn':'ok'):'bad',s.wifi?s.rssi+' dBm':L.notConnShort);"
+    "tile('tRate',s.ethLink?(busy?'ok':'idle'):'bad','<span class=dn>\\u2193 '+rate(dn)+'</span><br><span class=up>\\u2191 '+rate(up)+'</span>');"
+    "led('ledLan',s.ethLink);led('ledAct',busy,'act');led('ledWifi',ap||s.wifi,'wifi');}"
+    "function openSec(){let h=location.hash.slice(1),e=h&&document.getElementById(h);if(e){let d=e.closest('details');if(d){d.open=true;e.scrollIntoView();}}}"
+    "document.querySelectorAll('details.sec').forEach(d=>{if(['lanSec','clSec','nbSec'].indexOf(d.id)>=0)d.addEventListener('toggle',()=>{if(d.open)status();});});"
+    "document.querySelectorAll('.menu a').forEach(a=>a.addEventListener('click',e=>{let d=document.getElementById(a.getAttribute('href').slice(1));if(!d)return;e.preventDefault();let was=d.open;document.querySelectorAll('details.sec').forEach(x=>{x.open=false;});d.open=!was;document.querySelectorAll('.menu a').forEach(x=>x.classList.toggle('act',d.open&&x==a));if(d.open)d.scrollIntoView();}));"
+    "window.addEventListener('hashchange',openSec);openSec();"
+    "function row(k,v){return '<tr><td>'+k+'</td><td><b>'+v+'</b></td></tr>';}"
+    "function showLan(s){window.apb=s.mode=='apbridge';let l=s.lan,br=s.mode=='bridge'||s.mode=='apbridge',ap=!!s.uplink,box=document.getElementById('lanInfo'),h='';"
+    "if(!s.ethLink){box.innerHTML='<p class=\\'wait\\'>'+(ap?L.noUplink:L.noCable)+'</p>';return;}"
+    "h+=row(L.link,l.speed+' Mbit/s, '+(l.fullDuplex?L.full:L.half));h+=row(L.since,dur(l.linkSeconds));let dn=ap?l.rxRate:l.txRate,up=ap?l.txRate:l.rxRate;RH.push([dn,up]);if(RH.length>60)RH.shift();h+=row(L.rate,'<span class=dn>\\u2193 '+rate(dn)+'</span> \\u00b7 <span class=up>\\u2191 '+rate(up)+'</span>');h+='<tr><td colspan=2>'+spark()+'</td></tr>';h+=row(L.peak,'\\u2193 '+rate(ap?l.rxPeak:l.txPeak)+' \\u00b7 \\u2191 '+rate(ap?l.txPeak:l.rxPeak));h+=row(L.total,'\\u2193 '+size(ap?l.rxTotal:l.txTotal)+' \\u00b7 \\u2191 '+size(ap?l.txTotal:l.rxTotal));if(ap){h+=row(L.homeIp,s.uplink.ip||L.waitingIp);if(s.uplink.gw)h+=row(L.gateway,s.uplink.gw);box.innerHTML='<table class=\\'info\\'>'+h+'</table>';return;}"
+    "if(!l.clients.length){h+=row(br?L.device:L.ip,br?L.notDetected:L.noLease);}"
+    "l.clients.forEach((c,i)=>{let p=l.clients.length>1?' ('+(i+1)+')':'';if(c.name)h+=row(L.name+p,esc(c.name));h+=row(L.ip+p,c.ip||L.unknown);h+=row(L.mac+p,c.mac);h+=row(L.vendor+p,maker(c));h+=row((br?L.seen:L.assigned)+p,dur(c.seconds)+L.ago);if(c.leaseLeft!=null)h+=row(L.leaseLeft+p,c.leaseLeft?short(c.leaseLeft):L.expired);});"
+    "if(br){h+=row(L.addr,L.byRouter);if(l.staMac)h+=row(L.appears,l.staMac);h+=row(L.toWifi,l.toWifi);h+=row(L.toLan,l.toLan);h+=row(L.dropped,l.dropped);}"
+    "else{h+=row(L.gw,'192.168.50.1 / 1.1.1.1');if(l.leaseMinutes)h+=row(L.lease,l.leaseMinutes+' min');if(l.bridgeMac)h+=row(L.bridgeMac,l.bridgeMac);}"
+    "box.innerHTML='<table class=\\'info\\'>'+h+'</table>';}"
+    "function scan(){document.getElementById('networks').textContent=L.searching;poll(true,0);}"
+    "function poll(start,errors){fetch('/networks'+(start?'?start=1':'')).then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{"
+    "if(s.state=='running'){setTimeout(()=>poll(false,0),800);return;}"
+    "if(s.state!='done'){document.getElementById('networks').textContent=L.scanFail;return;}"
+    "showNetworks(s.networks);}).catch(()=>{if(errors<8)setTimeout(()=>poll(false,errors+1),1500);else document.getElementById('networks').textContent=L.scanFail;});}"
+    "function showNetworks(list){let box=document.getElementById('networks');box.textContent='';if(!list.length){box.textContent=L.none;return;}"
+    "list.forEach(n=>{let b=document.createElement('button');b.type='button';b.className='network';let name=document.createElement('b');name.textContent=n.ssid||L.hidden;"
+    "let detail=document.createElement('small');detail.textContent=n.rssi+' dBm - '+n.percent+' % - '+n.encryption+(n.secured?L.secured:'');b.append(name,detail);"
+    "b.onclick=()=>{document.querySelector('[name=ssid]').value=n.ssid;box.textContent=L.selected+n.ssid;};box.appendChild(b);});}"
+    "status();let tick=0;setInterval(()=>{if(document.hidden)return;if(window.apb&&(tick++%3))return;if(liveOpen())status();},2000);</script>";
+
 void showHome() {
   if (captiveRedirect()) return;
   detectLanguage();
@@ -1447,63 +1506,7 @@ void showHome() {
   menuItem("display", "Display");
   menuItem("webpw", T("Passwort", "Password"));
   menu += "</nav>";
-  const String script = String("<script>") + (uiEnglish ? JS_TEXT_EN : JS_TEXT_DE) +
-    "function liveOpen(){return ['lanSec','clSec','nbSec'].some(i=>{let d=document.getElementById(i);return d&&d.open;});}"
-    "function nbOpen(){let d=document.getElementById('nbSec');return d&&d.open;}"
-    "function status(){fetch('/status'+(nbOpen()?'?nb=1':'')).then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{if(document.getElementById('meter')){let bars=document.querySelectorAll('#meter .bar'),n=s.wifi?Math.ceil(s.percent/25):0;bars.forEach((b,i)=>b.className='bar '+(i<n?'on '+s.quality:''));document.getElementById('signalText').textContent=s.wifi?s.rssi+' dBm - '+s.percent+' %':L.notConnected+(s.staReason?': '+s.staReason:'')+(s.nextTry?' \\u2013 '+L.nextTry+' '+s.nextTry+' s':'');}showLan(s);tiles(s);showClients(s);showNeighbors(s);showFw(s);});}function showFw(s){if(!s.fw)return;s.fw.hits.forEach((h,i)=>{let e=document.getElementById('hit'+i);if(e)e.textContent=h;});let b=document.getElementById('fwBlocked');if(b)b.textContent=s.fw.blocked;let p=document.getElementById('fwMacPick');if(p&&s.wifiClients){p.textContent='';s.wifiClients.forEach(w=>{let k=document.createElement('button');k.type='button';k.className='secondary small';k.textContent='+ '+(w.name?w.name+' \\u2013 ':'')+w.mac+(w.ip?' ('+w.ip+')':'');k.onclick=()=>{let t=document.querySelector('[name=fw_macs]');if(t.value.indexOf(w.mac)<0)t.value=(t.value.trim()?t.value.trim()+'\\n':'')+w.mac;};p.appendChild(k);});}}function showClients(s){let c=document.getElementById('apClients');if(!c||!s.wifiClients)return;if(!s.wifiClients.length){c.textContent=L.noClients;return;}let h='';s.wifiClients.forEach(w=>{let t=w.name||w.ip||w.mac,d=[t!=w.mac?w.mac:'',maker(w)].filter(x=>x).join(' \\u00b7 '),x=bars(w.rssi)+' '+w.rssi+' dBm'+(w.phy?' \\u00b7 '+w.phy:'')+(w.since!=null?' \\u00b7 '+L.connFor+' '+short(w.since):'')+(w.leaseLeft!=null?' \\u00b7 '+L.leaseShort+' '+(w.leaseLeft?short(w.leaseLeft):L.expired):'');h+='<div class=\\'cl\\'><div><b>'+esc(t)+'</b>'+(w.name&&w.ip?'<span>'+w.ip+'</span>':'')+'</div><small>'+d+'</small><small>'+x+'</small></div>';});c.innerHTML=h;}function esc(t){return String(t).replace(/[&<>\"']/g,c=>'&#'+c.charCodeAt(0)+';');}function short(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60);return h?h+' h '+m+' min':m?m+' min':t+' s';}function maker(w){return w.vendor?esc(w.vendor):w.private?'<span title=\\''+L.privHint+'\\'>'+L.privMac+'</span>':L.noVendor;}function bars(r){let p=Math.max(0,Math.min(100,(r+90)*100/60)),n=Math.ceil(p/25),q=p<35?'weak':p<65?'fair':'good',h='<span class=\\'mini\\'>';for(let i=0;i<4;i++)h+='<i class=\\'bar'+(i<n?' on '+q:'')+'\\' style=\\'height:'+(i+1)*25+'%\\'></i>';return h+'</span>';}"
-    "function dur(t){let h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return (h?h+' h ':'')+(h||m?m+' min ':'')+x+' s';}"
-    "var RH=[];function num(x,d){return x.toFixed(d).replace('.',L.dec);}"
-    "function rate(b){return b>=1e6?num(b/1e6,1)+' Mbit/s':b>=1e3?num(b/1e3,0)+' kbit/s':b+' bit/s';}"
-    "function size(k){return k<1024?k+' KB':k<1048576?num(k/1024,1)+' MB':num(k/1048576,2)+' GB';}"
-    "function axis(v,s){return v==0?'0':v>=1e6?num(v/1e6,s<1e6?1:0)+' Mbit/s':num(v/1e3,0)+' kbit/s';}"
-    "function spark(){let n=RH.length,m=1e5;RH.forEach(r=>{m=Math.max(m,r[0],r[1]);});"
-    "let s=Math.pow(10,Math.floor(Math.log10(m/4))),f=m/4/s;s*=f<=1?1:f<=2?2:f<=5?5:10;let top=s*Math.ceil(m/s);"
-    "let X0=80,X1=592,Y0=12,Y1=150,X=i=>(X0+(60-n+i)*(X1-X0)/59).toFixed(1),Y=v=>(Y1-v/top*(Y1-Y0)).toFixed(1),g='';"
-    "for(let v=0;v<=top;v+=s){g+='<line class=\\'gl\\' x1=\\''+X0+'\\' x2=\\''+X1+'\\' y1=\\''+Y(v)+'\\' y2=\\''+Y(v)+'\\'/><text class=\\'yl\\' x=\\''+(X0-6)+'\\' y=\\''+(+Y(v)+4)+'\\'>'+axis(v,s)+'</text>';}"
-    "let xm=(X0+X1)/2;g+='<line class=\\'vl\\' x1=\\''+xm+'\\' x2=\\''+xm+'\\' y1=\\''+Y0+'\\' y2=\\''+Y1+'\\'/>';"
-    "g+='<text class=\\'xl\\' x=\\''+X0+'\\' y=\\'168\\'>\\u2212 2 min</text><text class=\\'xl\\' x=\\''+xm+'\\' y=\\'168\\' text-anchor=\\'middle\\'>\\u2212 1 min</text><text class=\\'xl\\' x=\\''+X1+'\\' y=\\'168\\' text-anchor=\\'end\\'>'+L.now+'</text>';"
-    "let pl=j=>RH.map((r,i)=>X(i)+','+Y(r[j])).join(' '),ar=j=>n?X(0)+','+Y1+' '+pl(j)+' '+X(n-1)+','+Y1:'';"
-    "return '<svg class=\\'spark\\' viewBox=\\'0 0 600 176\\' role=\\'img\\' aria-label=\\''+L.rate+'\\'>'+g+'<polygon class=\\'adn\\' points=\\''+ar(0)+'\\'/><polygon class=\\'aup\\' points=\\''+ar(1)+'\\'/><polyline class=\\'dn\\' points=\\''+pl(0)+'\\'/><polyline class=\\'up\\' points=\\''+pl(1)+'\\'/></svg>'"
-    "+'<div class=\\'leg\\'><span><i class=\\'sw dn\\'></i>Download</span><span><i class=\\'sw up\\'></i>Upload</span><span>'+L.last2+'</span></div>';}"
-    "function ipNum(a){return a?a.split('.').reduce((x,y)=>x*256+ +y,0):1e10;}"
-    "function ago(t){return t<30?L.justNow:L.agoA+short(t)+L.agoB;}"
-    "function showNeighbors(s){let c=document.getElementById('neighbors');if(!c||!s.neighbors)return;let l=s.neighbors.slice().sort((a,b)=>ipNum(a.ip)-ipNum(b.ip));"
-    "document.getElementById('nbCount').textContent=l.length?'('+l.length+')':'';if(!l.length){c.textContent=L.noNeighbors;return;}"
-    "let h='<div class=\\'tw\\'><table class=\\'nb\\'><tr><th>'+L.ip+'</th><th>'+L.device+'</th><th>'+L.mac+'</th><th>'+L.seenCol+'</th></tr>';"
-    "l.forEach(n=>{let r=n.ip&&s.uplink&&n.ip==s.uplink.gw,nm=n.name?esc(n.name):r?L.router:'\\u2013';"
-    "h+='<tr'+(n.seen>600?' class=\\'old\\'':'')+'><td>'+(n.ip||'\\u2013')+'</td><td><b>'+nm+'</b><small>'+maker(n)+'</small></td><td class=\\'mono\\'>'+n.mac+'</td><td>'+ago(n.seen)+'</td></tr>';});"
-    "c.innerHTML=h+'</table></div>';}"
-    "function tile(id,state,text){let t=document.getElementById(id);if(!t)return;t.className='tile t-'+state;t.querySelector('b').innerHTML=text;}"
-    "function led(id,on,cls){let e=document.getElementById(id);if(e)e.setAttribute('class','led'+(on?' '+(cls||'on'):''));}"
-    "function tiles(s){let ap=!!s.uplink,l=s.lan,dn=ap?l.rxRate:l.txRate,up=ap?l.txRate:l.rxRate,busy=s.ethLink&&dn+up>20000;"
-    "tile('tLan',s.ethLink?'ok':'bad',s.ethLink?l.speed+' Mbit/s':L.noCableShort);"
-    "if(ap){let n=(s.wifiClients||[]).length;tile('tWifi',n?'ok':'idle',n==1?L.oneDevice:n+L.devices);}"
-    "else tile('tWifi',s.wifi?(s.quality=='weak'?'warn':'ok'):'bad',s.wifi?s.rssi+' dBm':L.notConnShort);"
-    "tile('tRate',s.ethLink?(busy?'ok':'idle'):'bad','<span class=dn>\\u2193 '+rate(dn)+'</span><br><span class=up>\\u2191 '+rate(up)+'</span>');"
-    "led('ledLan',s.ethLink);led('ledAct',busy,'act');led('ledWifi',ap||s.wifi,'wifi');}"
-    "function openSec(){let h=location.hash.slice(1),e=h&&document.getElementById(h);if(e){let d=e.closest('details');if(d){d.open=true;e.scrollIntoView();}}}"
-    "document.querySelectorAll('details.sec').forEach(d=>{if(['lanSec','clSec','nbSec'].indexOf(d.id)>=0)d.addEventListener('toggle',()=>{if(d.open)status();});});"
-    "document.querySelectorAll('.menu a').forEach(a=>a.addEventListener('click',e=>{let d=document.getElementById(a.getAttribute('href').slice(1));if(!d)return;e.preventDefault();let was=d.open;document.querySelectorAll('details.sec').forEach(x=>{x.open=false;});d.open=!was;document.querySelectorAll('.menu a').forEach(x=>x.classList.toggle('act',d.open&&x==a));if(d.open)d.scrollIntoView();}));"
-    "window.addEventListener('hashchange',openSec);openSec();"
-    "function row(k,v){return '<tr><td>'+k+'</td><td><b>'+v+'</b></td></tr>';}"
-    "function showLan(s){window.apb=s.mode=='apbridge';let l=s.lan,br=s.mode=='bridge'||s.mode=='apbridge',ap=!!s.uplink,box=document.getElementById('lanInfo'),h='';"
-    "if(!s.ethLink){box.innerHTML='<p class=\\'wait\\'>'+(ap?L.noUplink:L.noCable)+'</p>';return;}"
-    "h+=row(L.link,l.speed+' Mbit/s, '+(l.fullDuplex?L.full:L.half));h+=row(L.since,dur(l.linkSeconds));let dn=ap?l.rxRate:l.txRate,up=ap?l.txRate:l.rxRate;RH.push([dn,up]);if(RH.length>60)RH.shift();h+=row(L.rate,'<span class=dn>\\u2193 '+rate(dn)+'</span> \\u00b7 <span class=up>\\u2191 '+rate(up)+'</span>');h+='<tr><td colspan=2>'+spark()+'</td></tr>';h+=row(L.peak,'\\u2193 '+rate(ap?l.rxPeak:l.txPeak)+' \\u00b7 \\u2191 '+rate(ap?l.txPeak:l.rxPeak));h+=row(L.total,'\\u2193 '+size(ap?l.rxTotal:l.txTotal)+' \\u00b7 \\u2191 '+size(ap?l.txTotal:l.rxTotal));if(ap){h+=row(L.homeIp,s.uplink.ip||L.waitingIp);if(s.uplink.gw)h+=row(L.gateway,s.uplink.gw);box.innerHTML='<table class=\\'info\\'>'+h+'</table>';return;}"
-    "if(!l.clients.length){h+=row(br?L.device:L.ip,br?L.notDetected:L.noLease);}"
-    "l.clients.forEach((c,i)=>{let p=l.clients.length>1?' ('+(i+1)+')':'';if(c.name)h+=row(L.name+p,esc(c.name));h+=row(L.ip+p,c.ip||L.unknown);h+=row(L.mac+p,c.mac);h+=row(L.vendor+p,maker(c));h+=row((br?L.seen:L.assigned)+p,dur(c.seconds)+L.ago);if(c.leaseLeft!=null)h+=row(L.leaseLeft+p,c.leaseLeft?short(c.leaseLeft):L.expired);});"
-    "if(br){h+=row(L.addr,L.byRouter);if(l.staMac)h+=row(L.appears,l.staMac);h+=row(L.toWifi,l.toWifi);h+=row(L.toLan,l.toLan);h+=row(L.dropped,l.dropped);}"
-    "else{h+=row(L.gw,'192.168.50.1 / 1.1.1.1');if(l.leaseMinutes)h+=row(L.lease,l.leaseMinutes+' min');if(l.bridgeMac)h+=row(L.bridgeMac,l.bridgeMac);}"
-    "box.innerHTML='<table class=\\'info\\'>'+h+'</table>';}"
-    "function scan(){document.getElementById('networks').textContent=L.searching;poll(true,0);}"
-    "function poll(start,errors){fetch('/networks'+(start?'?start=1':'')).then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{"
-    "if(s.state=='running'){setTimeout(()=>poll(false,0),800);return;}"
-    "if(s.state!='done'){document.getElementById('networks').textContent=L.scanFail;return;}"
-    "showNetworks(s.networks);}).catch(()=>{if(errors<8)setTimeout(()=>poll(false,errors+1),1500);else document.getElementById('networks').textContent=L.scanFail;});}"
-    "function showNetworks(list){let box=document.getElementById('networks');box.textContent='';if(!list.length){box.textContent=L.none;return;}"
-    "list.forEach(n=>{let b=document.createElement('button');b.type='button';b.className='network';let name=document.createElement('b');name.textContent=n.ssid||L.hidden;"
-    "let detail=document.createElement('small');detail.textContent=n.rssi+' dBm - '+n.percent+' % - '+n.encryption+(n.secured?L.secured:'');b.append(name,detail);"
-    "b.onclick=()=>{document.querySelector('[name=ssid]').value=n.ssid;box.textContent=L.selected+n.ssid;};box.appendChild(b);});}"
-    "status();let tick=0;setInterval(()=>{if(document.hidden)return;if(window.apb&&(tick++%3))return;if(liveOpen())status();},2000);</script>";
+  // Skript (Flash-Literal MAIN_SCRIPT) wird beim Senden direkt ausgegeben
 
   // Piktogramme
   const char *svgStart = "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>";
@@ -1544,7 +1547,7 @@ void showHome() {
                     : T("Mit diesem Namen und Passwort verbinden sich deine Ger&auml;te. Es ist dasselbe WLAN wie unten unter &bdquo;Einrichtungs-WLAN&ldquo;.",
                         "Your devices connect with this name and password. It is the same WiFi as below under \"Setup WiFi\".")) + "</small></p></div>";
 
-  const String modeForm = String("<h2>") + T("Betriebsart", "Operating mode") + "</h2>"
+  auto modeForm = [&]() -> String { return String("<h2>") + T("Betriebsart", "Operating mode") + "</h2>"
     "<form method='post' action='/mode' onsubmit=\"var m=this.querySelector('input[name=mode]:checked');if(!m)return true;"
     "if(m.value.indexOf('ap')==0&&!this.m_open.checked){if(this.m_pass.value!=this.m_repeat.value){alert(L.mismatch);return false;}" + (apHasPassword ? "" : "if(!this.m_pass.value){alert(L.pwNeeded);return false;}") + "}"
     "if(m.value=='apbridge'&&!this.ack.checked){alert(L.ackNeeded);return false;}return true;\">"
@@ -1567,7 +1570,7 @@ void showHome() {
         "Connect the LAN port to your router. WiFi devices get their addresses directly from your router and are visible in your home network (AirPlay, Chromecast, printers)."),
       String("<span class='badge slow'>") + T("Webinterface &uuml;ber die IP vom Router", "Web interface via the IP from the router") + "</span> <span class='badge slow'>" + T("bis ca. 8 WLAN-Ger&auml;te, nur 2,4 GHz", "up to approx. 8 WiFi devices, 2.4 GHz only") + "</span>") +
     apFields + apBridgeWarning +
-    "<button type='submit'>" + T("&Uuml;bernehmen und neu starten", "Apply and restart") + "</button></form>";
+    "<button type='submit'>" + T("&Uuml;bernehmen und neu starten", "Apply and restart") + "</button></form>"; };
 
   const bool apOpen = setupApPassword.isEmpty();
   const bool defaultApPassword = !apOpen && setupApPassword == SETUP_AP_PASSWORD;
@@ -1576,7 +1579,7 @@ void showHome() {
   else if (apOpen) apState = String("<p class='bad'>") + T("<b>Kein Passwort gesetzt.</b> Das WLAN ist offen. Lege jetzt ein Passwort fest.", "<b>No password set.</b> The WiFi is open. Set a password now.") + "</p>";
   else if (defaultApPassword) apState = String("<p class='bad'>") + T("Es ist noch das Standard-Passwort aktiv. Da es &ouml;ffentlich bekannt ist, solltest du es jetzt &auml;ndern.", "The default password is still active. As it is publicly known, you should change it now.") + "</p>";
   else apState = String("<p class='ok'>") + T("Ein eigenes Passwort ist gesetzt.", "A custom password is set.") + "</p>";
-  const String apForm = String("<h2 id='ap'>") + (apMode ? T("WLAN (Access Point)", "WiFi (access point)") : T("Einrichtungs-WLAN", "Setup WiFi")) + "</h2><div class='" + (apOpen ? "apbox open" : "apbox") + "'>" + apState +
+  auto apForm = [&]() -> String { return String("<h2 id='ap'>") + (apMode ? T("WLAN (Access Point)", "WiFi (access point)") : T("Einrichtungs-WLAN", "Setup WiFi")) + "</h2><div class='" + (apOpen ? "apbox open" : "apbox") + "'>" + apState +
     "<p><small>" + T("Name und Passwort gelten f&uuml;r das Einrichtungs-WLAN und in den Access-Point-Betriebsarten f&uuml;r dein WLAN.", "Name and password apply to the setup WiFi and, in the access point modes, to your WiFi.") + "</small></p>"
     "<form method='post' action='/appass' onsubmit=\"if(!this.ap_open.checked){if(this.ap_new.value!=this.ap_repeat.value){alert(L.mismatch);return false;}" + (apOpen ? "if(!this.ap_new.value){alert(L.pwNeeded);return false;}" : "") + "}return confirm(L.confirmPw);\">"
     "<label>" + T("WLAN-Name", "WiFi name") + "<input name='ap_ssid' maxlength='32' value='" + htmlEscape(apSsid) + "' required></label>"
@@ -1585,7 +1588,7 @@ void showHome() {
     "<div class='pwfields'><label>" + T("Neues Passwort", "New password") + "<input name='ap_new' type='password' minlength='8' maxlength='63' autocomplete='new-password' placeholder='" + (apOpen ? "" : T("Leer lassen, um es zu behalten", "Leave empty to keep it")) + "'></label>"
     "<label>" + T("Neues Passwort wiederholen", "Repeat new password") + "<input name='ap_repeat' type='password' minlength='8' maxlength='63' autocomplete='new-password'></label></div>"
     "<p class='pwfields'><small>" + T("8 bis 63 Zeichen, keine Umlaute. Nach dem Speichern startet die Bridge neu; danach mit dem neuen Namen bzw. Passwort verbinden.", "8 to 63 characters, ASCII only. The bridge restarts after saving; then reconnect with the new name or password.") + "</small></p>"
-    "<button type='submit'>" + (apOpen && !apOpenChosen ? T("Passwort festlegen", "Set password") : T("Speichern", "Save")) + "</button></form></div>";
+    "<button type='submit'>" + (apOpen && !apOpenChosen ? T("Passwort festlegen", "Set password") : T("Speichern", "Save")) + "</button></form></div>"; };
 
   // Auffaelliger Warnhinweis ganz oben, solange das WLAN offen ist
   String apAlert;
@@ -1622,13 +1625,13 @@ void showHome() {
         "The Ethernet device gets its address, gateway and DNS from the bridge. The bridge translates the connection to the router.");
   footer = "<p><small>" + footer + "</small></p>";
 
-  String routerSection;
-  if (!apMode) {
-    routerSection = String("<h2>") + T("Router-WLAN", "Router WiFi") + "</h2><button class='secondary' type='button' onclick='scan()'>" + T("Verf&uuml;gbare WLANs suchen", "Search for WiFi networks") + "</button><div id='networks'></div>"
+  auto routerSection = [&]() -> String {
+    if (apMode) return String();
+    return String("<h2>") + T("Router-WLAN", "Router WiFi") + "</h2><button class='secondary' type='button' onclick='scan()'>" + T("Verf&uuml;gbare WLANs suchen", "Search for WiFi networks") + "</button><div id='networks'></div>"
       "<form method='post' action='/save'><label>" + T("WLAN-Name des Routers", "Router WiFi name") + "<input name='ssid' maxlength='32' value='" + htmlEscape(routerSsid) + "' required></label>"
       "<label>" + T("WLAN-Passwort des Routers", "Router WiFi password") + "<input name='password' type='password' maxlength='63' placeholder='" + T("Nur &auml;ndern, wenn n&ouml;tig", "Only change if needed") + "'></label>"
       "<button type='submit'>" + T("Speichern und verbinden", "Save and connect") + "</button></form>";
-  }
+  };
 
   // Kopf: Board mit Status-LEDs, Name, Betriebsart, Statuskacheln
   const char *board =
@@ -1689,19 +1692,21 @@ void showHome() {
   // Einstellungen als aufklappbare Abschnitte (Status-Badge im Titel); jeder Abschnitt wird erst beim Senden erzeugt
   out(String("<h2 class='sett'>") + T("Einstellungen", "Settings") + "</h2>");
   if (!apMode) {
-    out(collapsible(routerSection, "router", SEC_ICON_WIFI, wifiConnected ? pill("ok", T("verbunden", "connected")) : pill("warn", T("nicht verbunden", "not connected")), false));
+    out(collapsible(routerSection(), "router", SEC_ICON_WIFI, wifiConnected ? pill("ok", T("verbunden", "connected")) : pill("warn", T("nicht verbunden", "not connected")), false));
   }
-  out(collapsible(modeForm, "modes", SEC_ICON_MODE, String(""), false));
+  out(collapsible(modeForm(), "modes", SEC_ICON_MODE, String(""), false));
   out(collapsible(firewallSectionHtml(), "fw", FW_ICON_SHIELD, fwEnabled ? pill("ok", T("aktiv", "on")) : pill("", T("aus", "off")), false));
   // In den Access-Point-Modi stehen Name und Passwort direkt bei der Betriebsart; der separate Abschnitt entfaellt
   if (!apMode) {
-    out(collapsible(apForm, "ap", SEC_ICON_WIFI, apOpen ? pill("bad", T("offen", "open")) : pill("ok", T("gesichert", "secured")), false));
+    out(collapsible(apForm(), "ap", SEC_ICON_WIFI, apOpen ? pill("bad", T("offen", "open")) : pill("ok", T("gesichert", "secured")), false));
   }
   out(collapsible(displaySectionHtml(), "display", SEC_ICON_DISPLAY, displayStatusPill(), false));
   out(collapsible(webPasswordSectionHtml(), "webpw", SEC_ICON_LOCK, webPasswordSet() ? pill("ok", T("gesetzt", "set")) : pill("warn", T("kein Passwort", "no password")), false));
   out(footer);
   out(String("<p><small>") + T("Firmware-Version ", "Firmware version ") + FIRMWARE_VERSION + "</small></p>");
-  out(script);
+  out("<script>");
+  webServer.sendContent(uiEnglish ? JS_TEXT_EN : JS_TEXT_DE);
+  webServer.sendContent(MAIN_SCRIPT);
   out(pageFooter());
   webServer.sendContent("");  // Ende der Antwort
 }
