@@ -2,13 +2,13 @@
 
 🇬🇧 [English](README.md) | 🇩🇪 **Deutsch**
 
-[![Version](https://img.shields.io/badge/Version-3.16.0-1263a6)](CHANGELOG.de.md)
+[![Version](https://img.shields.io/badge/Version-3.17.0-1263a6)](CHANGELOG.de.md)
 [![Plattform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#bauen-und-flashen)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 3.16.0** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
+**Version 3.17.0** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
 
 **WT32-ETH01 NetBridge** ist eine Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die Ethernet und
 WLAN in beide Richtungen verbindet:
@@ -82,8 +82,8 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
   MAC-Liste
 - **Passwortschutz für das Webinterface** (optional, gesalzener Hash, Sitzungs-Cookie, Sperre nach
   Fehlversuchen)
-- **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt auf NAT zurück und entfernt das
-  Webinterface-Passwort
+- **Notfall-Reset**: 3-mal hintereinander Strom aus/an setzt die Bridge auf Werkseinstellung
+  zurück (NAT-Modus, Router-WLAN, Passwörter und Firewall gelöscht)
 
 **Optionales Display** (OLED SSD1306/SSD1315 per I²C oder Farb-TFT ST7735 per SPI)
 
@@ -296,8 +296,8 @@ Chromecast, Drucker).
 >
 > **Zurück zur Einrichtung (Notfall-Reset):** die Stromversorgung **3-mal hintereinander** kurz aus-
 > und wieder einschalten, jeweils innerhalb von 10 Sekunden. Danach startet die Bridge im NAT-Modus mit
-> dem Einrichtungs-WLAN, und das Passwort des Webinterface ist entfernt; alle anderen Einstellungen
-> bleiben erhalten.
+> dem Einrichtungs-WLAN, und **alle Einstellungen sind auf Werkseinstellung zurückgesetzt** (auch Router-WLAN, Passwörter
+> und Firewall).
 
 ## Firewall
 
@@ -346,7 +346,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **3.16.0** – Access Point wählt beim Start den ruhigsten WLAN-Kanal.
+Aktuelle Version: **3.17.0** – Notfall-Reset setzt auf Werkseinstellung zurück.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

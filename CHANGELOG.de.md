@@ -14,6 +14,14 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.17.0] – 04.11.2026
+
+### Geändert
+- **Notfall-Reset (3× Strom aus/an) setzt jetzt alles auf Werkseinstellung zurück:** Betriebsart (NAT),
+  gespeichertes Router-WLAN, Firewall, Display, Passwörter und Namen werden gelöscht; die Bridge startet im
+  Einrichtungs-WLAN. Vorher wurden nur die Betriebsart und das Webinterface-Passwort zurückgesetzt, das
+  Router-WLAN blieb eingetragen.
+
 ## [3.16.0] – 04.11.2026
 
 ### Neu

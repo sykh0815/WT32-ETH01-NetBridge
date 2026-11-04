@@ -13,6 +13,14 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.17.0] – 2026-11-04
+
+### Changed
+- **The emergency reset (power off/on 3 times) now resets everything to factory defaults:** operating mode
+  (NAT), stored router WiFi, firewall, display, passwords and names are cleared; the bridge starts in the
+  setup WiFi. Before, only the operating mode and the web interface password were reset and the router
+  WiFi stayed configured.
+
 ## [3.16.0] – 2026-11-04
 
 ### New

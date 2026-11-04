@@ -2,13 +2,13 @@
 
 🇬🇧 **English** | 🇩🇪 [Deutsch](README.de.md)
 
-[![Version](https://img.shields.io/badge/Version-3.16.0-1263a6)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-3.17.0-1263a6)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#build-and-flash)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 3.16.0** – see the [changelog](CHANGELOG.md)
+**Version 3.17.0** – see the [changelog](CHANGELOG.md)
 
 **WT32-ETH01 NetBridge** is a firmware for the **WT32-ETH01 v1.4** (ESP32 + LAN8720) that connects
 Ethernet and WiFi in both directions:
@@ -82,7 +82,7 @@ All screenshots with descriptions: **[screenshot album](docs/SCREENSHOTS.md)**.
   isolate WiFi devices, up to **32 custom rules** (add, move, delete) with hit counters, MAC allow list
 - **Password protection for the web interface** (optional, salted hash, session cookie, lockout after
   failed attempts)
-- **Emergency reset**: power off/on 3 times in a row returns to NAT mode and removes the web password
+- **Emergency reset**: power off/on 3 times in a row resets the bridge to factory defaults (NAT mode; router WiFi, passwords and firewall cleared)
 
 **Optional display** (OLED SSD1306/SSD1315 via I²C or colour TFT ST7735 via SPI)
 
@@ -291,8 +291,8 @@ devices get their addresses directly from your router and are visible in the hom
 > switching.
 >
 > **Back to setup (emergency reset):** switch the power off and on again **3 times in a row**, each
-> time within 10 seconds. The bridge then starts in NAT mode with the setup WiFi and the web interface
-> password is removed; all other settings are kept.
+> time within 10 seconds. The bridge then starts in NAT mode with the setup WiFi and **all settings are reset to
+> factory defaults** (including router WiFi, passwords and firewall).
 
 ## Firewall
 
@@ -341,7 +341,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **3.16.0** – access point picks the quietest WiFi channel at startup.
+Current version: **3.17.0** – emergency reset restores factory defaults.
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 

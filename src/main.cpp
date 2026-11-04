@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.16.0";
+constexpr char FIRMWARE_VERSION[] = "3.17.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1592,7 +1592,7 @@ void showHome() {
       T("Jetzt Passwort festlegen &darr;", "Set a password now &darr;") + "</a></div></div>";
   }
   if (recoveryTriggered) {
-    apAlert += String("<p class='bad'><b>") + T("Notfall-Reset ausgef&uuml;hrt:", "Emergency reset performed:") + "</b> " + T("Die Betriebsart wurde auf NAT zur&uuml;ckgesetzt und der Passwortschutz des Webinterface entfernt.", "The operating mode was reset to NAT and the web interface password protection was removed.") + "</p>";
+    apAlert += String("<p class='bad'><b>") + T("Notfall-Reset ausgef&uuml;hrt:", "Emergency reset performed:") + "</b> " + T("Alle Einstellungen wurden auf Werkseinstellung zur&uuml;ckgesetzt (NAT-Modus, Router-WLAN, Passw&ouml;rter und Firewall gel&ouml;scht).", "All settings were reset to factory defaults (NAT mode; router WiFi, passwords and firewall cleared).") + "</p>";
   }
   if (apMode && !webPasswordSet()) {
     // In den Access-Point-Modi ist das Webinterface auch aus dem Heimnetz erreichbar
@@ -4313,7 +4313,7 @@ void setup() {
   WiFi.onEvent(onNetworkEvent);
   preferences.begin("bridge", false);
 
-  // Notfall-Reset: 3x hintereinander Strom aus/an (jeweils < 10 s) setzt die Betriebsart auf NAT zurueck.
+  // Notfall-Reset: 3x hintereinander Strom aus/an (jeweils < 10 s) setzt alle Einstellungen auf Werkseinstellung.
   // Bei kurzem Trennen sinkt die Spannung oft nur unter die Brownout-Schwelle (Kondensatoren, Netzteil),
   // dann meldet der ESP32 BROWNOUT statt POWERON - beides zaehlt als Aus-/Einschalten.
   const esp_reset_reason_t bootReason = esp_reset_reason();
@@ -4321,12 +4321,10 @@ void setup() {
   quickBoots = (bootReason == ESP_RST_POWERON || bootReason == ESP_RST_BROWNOUT) ? quickBoots + 1 : 0;
   Serial.printf("Notfall-Reset: Start %d von 3 (Grund: %s)\n", quickBoots, resetReasonText(bootReason));
   if (quickBoots >= 3) {
-    preferences.putUChar("mode", MODE_NAT);
-    preferences.remove("web_hash");  // Passwortschutz des Webinterface entfernen (Passwort vergessen)
-    preferences.remove("web_salt");
+    preferences.clear();  // Werkseinstellung: Betriebsart, Router-WLAN, Firewall, Display, Passwoerter, Namen
     quickBoots = 0;
     recoveryTriggered = true;
-    Serial.println("Notfall-Reset: Betriebsart auf NAT zurueckgesetzt, Passwortschutz des Webinterface entfernt");
+    Serial.println("Notfall-Reset: alle Einstellungen auf Werkseinstellung zurueckgesetzt (NAT, Einrichtungs-WLAN)");
   }
   preferences.putUChar("boots", quickBoots);
   bootCounterClearAtMs = millis() + 10000;
