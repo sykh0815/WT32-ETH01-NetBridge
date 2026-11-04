@@ -13,6 +13,14 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.26.0] – 2026-11-04
+
+### Changed
+- **Web interface, looks:** every menu entry at the top has an icon. New, more fitting icons for uplink (LAN
+  port), WiFi devices, home network, mode and setup WiFi. The section is now called "Home Assistant / MQTT"
+  and has a Home Assistant icon. When MQTT is enabled, a small MQTT mark appears at the left of the menu
+  (green = connected, yellow = not connected).
+
 ## [3.25.0] – 2026-11-04
 
 ### Added

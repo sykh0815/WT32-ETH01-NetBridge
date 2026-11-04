@@ -14,6 +14,14 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.26.0] – 04.11.2026
+
+### Geändert
+- **Webinterface, Optik:** Jeder Menüpunkt oben hat ein Piktogramm. Neue, passendere Piktogramme für Uplink
+  (LAN-Port), WLAN-Geräte, Heimnetz, Betriebsart und Einrichtungs-WLAN. Der Abschnitt heißt jetzt
+  „Home Assistant / MQTT“ und hat ein Home-Assistant-Piktogramm. Ist MQTT aktiv, steht links im Menü ein
+  kleines MQTT-Zeichen (grün = verbunden, gelb = nicht verbunden).
+
 ## [3.25.0] – 04.11.2026
 
 ### Neu
