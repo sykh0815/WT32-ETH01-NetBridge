@@ -13,6 +13,11 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.17.1] – 2026-11-04
+
+### Changed
+- **Web interface:** the logo with product name and version now sits above the menu bar.
+
 ## [3.17.0] – 2026-11-04
 
 ### Changed

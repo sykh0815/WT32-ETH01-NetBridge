@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.17.0";
+constexpr char FIRMWARE_VERSION[] = "3.17.1";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1649,7 +1649,7 @@ void showHome() {
       modeText = T("WLAN-Client &middot; eigenes Netz 192.168.50.x am LAN-Port", "WiFi client &middot; own network 192.168.50.x on the LAN port");
       modeIcon = natIcon; modeClass = "m-nat"; break;
   }
-  const String head = String("<div class='hd'>") + board + "<div><h1>" + PRODUCT_NAME + "</h1><small class='sub'>" + T("Ethernet &#8644; WLAN", "Ethernet &#8644; WiFi") + " &middot; Firmware " + FIRMWARE_VERSION + "</small></div></div>"
+  const String head = String("<div class='hd'>") + board + "<div><h1>" + PRODUCT_NAME + "</h1><small class='sub'>" + T("Ethernet &#8644; WLAN", "Ethernet &#8644; WiFi") + " &middot; Firmware " + FIRMWARE_VERSION + "</small></div></div>" + menu +
     "<a class='modebar " + modeClass + "' href='#modes'><span class='mi'>" + modeIcon + "</span><span class='mt'><small>" + T("Betriebsart", "Operating mode") + "</small><b>" + modeTitle + "</b><em>" + modeText + "</em></span><span class='mc'>" + T("&auml;ndern", "change") + " &rsaquo;</span></a>"
     "<div class='tiles'><div class='tile' id='tLan'><i class='dot'></i><small>" + (apMode ? T("Uplink (LAN)", "Uplink (LAN)") : T("LAN-Port", "LAN port")) + "</small><b>&hellip;</b></div>"
     "<div class='tile' id='tWifi'><i class='dot'></i><small>" + (apMode ? T("WLAN-Ger&auml;te", "WiFi devices") : T("Router-WLAN", "Router WiFi")) + "</small><b>&hellip;</b></div>"
@@ -1665,7 +1665,6 @@ void showHome() {
   };
   out(pageHeader(PRODUCT_NAME));
   out(languageSwitchHtml());
-  out(menu);
   out(head);
   out(apAlert);
   out(routerState);

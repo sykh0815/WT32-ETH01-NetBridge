@@ -2,13 +2,13 @@
 
 🇬🇧 **English** | 🇩🇪 [Deutsch](README.de.md)
 
-[![Version](https://img.shields.io/badge/Version-3.17.0-1263a6)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-3.17.1-1263a6)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#build-and-flash)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 3.17.0** – see the [changelog](CHANGELOG.md)
+**Version 3.17.1** – see the [changelog](CHANGELOG.md)
 
 **WT32-ETH01 NetBridge** is a firmware for the **WT32-ETH01 v1.4** (ESP32 + LAN8720) that connects
 Ethernet and WiFi in both directions:
@@ -341,7 +341,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **3.17.0** – emergency reset restores factory defaults.
+Current version: **3.17.1** – logo sits above the menu bar.
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 
