@@ -14,6 +14,13 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.18.2] – 04.11.2026
+
+### Behoben
+- **Captive Portal auf dem iPhone:** Der Verbindungstest von iOS/macOS bekommt jetzt sofort eine kleine Seite mit
+  der Schaltfläche „Webinterface öffnen“ statt einer Weiterleitung auf die große Einrichtungsseite (über 50 KB).
+  Das Anmeldefenster erscheint dadurch auch bei schwacher Funkverbindung; die große Seite lädt erst nach dem Tippen.
+
 ## [3.18.1] – 04.11.2026
 
 ### Behoben

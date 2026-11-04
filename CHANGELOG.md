@@ -13,6 +13,13 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.18.2] – 2026-11-04
+
+### Fixed
+- **Captive portal on the iPhone:** the iOS/macOS connectivity check now immediately gets a small page with an
+  "Open web interface" button instead of a redirect to the large setup page (over 50 KB). The login sheet
+  therefore appears even with a weak radio link; the large page only loads after tapping.
+
 ## [3.18.1] – 2026-11-04
 
 ### Fixed

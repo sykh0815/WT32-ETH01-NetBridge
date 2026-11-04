@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.18.1";
+constexpr char FIRMWARE_VERSION[] = "3.18.2";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1367,6 +1367,17 @@ bool captiveRedirect() {
   const String host = webServer.hostHeader();
   if (host == "192.168.4.1" || host.startsWith("192.168.4.1:")) return false;
   Serial.printf("Captive Portal: %s%s -> Einrichtungsseite\n", host.c_str(), webServer.uri().c_str());
+  // iOS/macOS: sofort eine kleine Seite statt Weiterleitung. Das Anmeldefenster zeigt sie schnell an, die grosse
+  // Einrichtungsseite (ueber 50 KB) laedt erst nach dem Tippen auf die Schaltflaeche.
+  if (host.indexOf("apple.com") >= 0 || host.indexOf("icloud.com") >= 0) {
+    webServer.sendHeader("Cache-Control", "no-store");
+    webServer.send(200, "text/html; charset=utf-8",
+      "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>WT32-ETH01 NetBridge</title></head>"
+      "<body style='font-family:sans-serif;text-align:center;padding:40px 20px'><h2>WT32-ETH01 NetBridge</h2>"
+      "<p>Einrichtung / Setup</p><p><a href='http://192.168.4.1/' style='display:inline-block;padding:14px 26px;background:#1263a6;color:#fff;border-radius:10px;text-decoration:none;font-weight:bold'>Webinterface &ouml;ffnen / Open</a></p>"
+      "<p><small>http://192.168.4.1</small></p></body></html>");
+    return true;
+  }
   webServer.sendHeader("Location", "http://192.168.4.1/");
   webServer.sendHeader("Cache-Control", "no-store");
   webServer.send(302, "text/plain", "");
