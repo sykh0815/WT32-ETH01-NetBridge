@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.20.2] – 04.11.2026
+
+### Behoben
+- **Harmlose Fehlermeldungen im seriellen Log nach dem Werksreset** („nvs_get_str len fail: ssid NOT_FOUND“
+  u. a.): Einstellungen, die noch nicht gespeichert sind, werden jetzt vor dem Lesen geprüft.
+
 ## [3.20.1] – 04.11.2026
 
 ### Entfernt

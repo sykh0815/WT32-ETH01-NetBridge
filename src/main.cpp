@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.20.1";
+constexpr char FIRMWARE_VERSION[] = "3.20.2";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -4117,7 +4117,7 @@ float supplyVoltage() {
 
 void vmonBegin() {
   vmonEnabled = preferences.getBool("vmon_on", false);
-  vmonRatio = preferences.getFloat("vmon_ratio", 2.0f);
+  vmonRatio = preferences.isKey("vmon_ratio") ? preferences.getFloat("vmon_ratio", 2.0f) : 2.0f;
   if (vmonRatio < 1.0f || vmonRatio > 10.0f) vmonRatio = 2.0f;
   analogSetPinAttenuation(VMON_PIN, ADC_11db);  // Messbereich bis ca. 3,1 V
 }
@@ -4357,6 +4357,11 @@ uint8_t pickApChannel() {
   return best;
 }
 
+// Wie preferences.getString, aber ohne Fehlermeldung der Bibliothek, wenn der Schluessel noch fehlt (z. B. nach dem Werksreset)
+String prefString(const char *key, const String &fallback) {
+  return preferences.isKey(key) ? preferences.getString(key, fallback) : fallback;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(250);
@@ -4377,7 +4382,7 @@ void setup() {
     const char *keepBool[] = {"disp_flip", "tft_bgr", "tft_bl", "tft_inv", "vmon_on"};
     uint8_t keptU8[3] = {};
     bool keptU8Valid[3] = {}, keptBool[5] = {}, keptBoolValid[5] = {}, keptRatioValid = preferences.isKey("vmon_ratio");
-    const float keptRatio = preferences.getFloat("vmon_ratio", 2.0f);
+    const float keptRatio = keptRatioValid ? preferences.getFloat("vmon_ratio", 2.0f) : 2.0f;
     for (int i = 0; i < 3; ++i) if ((keptU8Valid[i] = preferences.isKey(keepU8[i]))) keptU8[i] = preferences.getUChar(keepU8[i]);
     for (int i = 0; i < 5; ++i) if ((keptBoolValid[i] = preferences.isKey(keepBool[i]))) keptBool[i] = preferences.getBool(keepBool[i]);
     preferences.clear();
@@ -4399,19 +4404,19 @@ void setup() {
   displayBegin();
   timeBegin();
   if (preferences.isKey("web_hash") && preferences.isKey("web_salt")) {
-    webPassHash = preferences.getString("web_hash", "");
-    webPassSalt = preferences.getString("web_salt", "");
+    webPassHash = prefString("web_hash", "");
+    webPassSalt = prefString("web_salt", "");
     if (webPassHash.length() != 64) webPassHash = "";
   }
   Serial.println(webPasswordSet() ? "Webinterface: Passwortschutz aktiv" : "Webinterface: ohne Passwort");
-  routerSsid = preferences.getString("ssid", "");
-  routerPassword = preferences.getString("password", "");
-  apSsid = preferences.getString("ap_ssid", SETUP_AP_SSID);
+  routerSsid = prefString("ssid", "");
+  routerPassword = prefString("password", "");
+  apSsid = prefString("ap_ssid", SETUP_AP_SSID);
   for (const char *oldName : OLD_SETUP_AP_SSIDS) {
     if (apSsid == oldName) apSsid = SETUP_AP_SSID;
   }
   if (!isValidSsid(apSsid)) apSsid = SETUP_AP_SSID;
-  setupApPassword = preferences.getString("ap_pass", SETUP_AP_PASSWORD);
+  setupApPassword = prefString("ap_pass", SETUP_AP_PASSWORD);
   if (!isValidWifiPassword(setupApPassword)) setupApPassword = isValidWifiPassword(SETUP_AP_PASSWORD) ? SETUP_AP_PASSWORD : "";
   const uint8_t storedMode = preferences.getUChar("mode", MODE_NAT);
   bridgeMode = storedMode <= MODE_AP_BRIDGE ? static_cast<BridgeMode>(storedMode) : MODE_NAT;

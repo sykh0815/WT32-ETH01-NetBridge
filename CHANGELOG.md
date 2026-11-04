@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.20.2] – 2026-11-04
+
+### Fixed
+- **Harmless error messages in the serial log after the factory reset** ("nvs_get_str len fail: ssid
+  NOT_FOUND" and others): settings that are not stored yet are now checked before reading.
+
 ## [3.20.1] – 2026-11-04
 
 ### Removed
