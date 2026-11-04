@@ -13,6 +13,13 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.15.1] – 2026-11-04
+
+### Changed
+- **Menu bar:** equal-width, aligned buttons in a grid; the active category is highlighted.
+- **Menu as accordion:** a click opens the category and closes all others; clicking the open category
+  again closes it.
+
 ## [3.15.0] – 2026-11-04
 
 ### New
