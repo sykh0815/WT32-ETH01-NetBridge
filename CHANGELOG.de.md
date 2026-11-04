@@ -14,6 +14,13 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.22.0] – 04.11.2026
+
+### Neu
+- **Schnittstelle für die HACS-Integration** (ohne MQTT-Broker): `GET /api/state`, `POST /api/display?on=0|1`,
+  `POST /api/restart`; Zugriff mit Zugangs-Token (steht im Abschnitt „Home Assistant“) oder Webinterface-Sitzung.
+- **mDNS-Dienst `_netbridge._tcp`:** Home Assistant findet das Gerät selbst (sobald es eine IP im Heimnetz hat).
+
 ## [3.21.1] – 04.11.2026
 
 ### Neu

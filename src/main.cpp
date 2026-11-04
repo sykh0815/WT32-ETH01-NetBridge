@@ -13,6 +13,7 @@
 #include <freertos/queue.h>
 #include <esp_system.h>
 #include <esp_mac.h>
+#include <ESPmDNS.h>
 #include <esp_random.h>
 #include <mbedtls/sha256.h>
 #include "oui_table.h"
@@ -96,6 +97,7 @@ String displaySectionHtml();
 String mqttSectionHtml();
 String mqttBadge();
 void saveMqtt();
+bool tokenValid();
 void displayWake();
 extern bool displayEnglish;
 extern bool displayOn;
@@ -125,7 +127,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.21.1";
+constexpr char FIRMWARE_VERSION[] = "3.22.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -2076,8 +2078,12 @@ void showLogin(const String &message, int code) {
 
 // true = Anfrage darf bearbeitet werden. Sonst wurde schon die Anmeldeseite (bzw. 401 fuer Abfragen) gesendet.
 bool requireAuth() {
-  if (!webPasswordSet() || sessionValid()) return true;
+  if (!webPasswordSet() || sessionValid() || tokenValid()) return true;
   const String uri = webServer.uri();
+  if (uri.startsWith("/api/")) {
+    webServer.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+    return false;
+  }
   if (uri == "/status" || uri == "/networks") {
     webServer.send(401, "application/json", "{\"login\":true}");  // die Seite laedt sich dann neu
     return false;
@@ -4377,11 +4383,18 @@ MiniMqtt mqtt;
 bool mqttEnabled = false;
 uint16_t mqttPort = 1883;
 String mqttHost, mqttUser, mqttPass, mqttPrefix = "netbridge";
-String mqttBase, mqttNodeId;
+String mqttBase, mqttNodeId, apiToken;
 uint32_t mqttNextTryMs = 0, mqttLastPublishMs = 0;
 const char *mqttStatus = "";  // kurzer Zustand fuer die Anzeige
 
 void mqttLoad() {
+  apiToken = prefString("api_tok", "");
+  if (apiToken.isEmpty()) {
+    char t[17];
+    snprintf(t, sizeof(t), "%08x%08x", static_cast<unsigned>(esp_random()), static_cast<unsigned>(esp_random()));
+    apiToken = t;
+    preferences.putString("api_tok", apiToken);
+  }
   mqttEnabled = preferences.getBool("mq_on", false);
   mqttHost = prefString("mq_host", "");
   mqttUser = prefString("mq_user", "");
@@ -4451,16 +4464,52 @@ void mqttPublishDiscovery() {
   mqttDiscovery("button", "restart", "Restart", String("\"cmd_t\":\"") + mqttBase + "/restart/set\",\"dev_cla\":\"restart\",\"payload_press\":\"PRESS\"");
 }
 
-void mqttPublishState() {
+String haStateJson(bool full) {
   const bool ap = isApMode();
-  String s = String("{\"link\":\"") + (ethernetLinkUp ? "ON" : "OFF") + "\",\"down\":" + String((ap ? lanRxRate : lanTxRate) / 1e6f, 2) + ",\"up\":" + String((ap ? lanTxRate : lanRxRate) / 1e6f, 2) +
+  String s = String("{\"id\":\"") + mqttNodeId + "\",\"version\":\"" + FIRMWARE_VERSION + "\",\"ap\":" + (ap ? "true" : "false") + ",\"link\":\"" + (ethernetLinkUp ? "ON" : "OFF") +
+    "\",\"down\":" + String((ap ? lanRxRate : lanTxRate) / 1e6f, 2) + ",\"up\":" + String((ap ? lanTxRate : lanRxRate) / 1e6f, 2) +
     ",\"heap\":" + String(ESP.getFreeHeap() / 1024) + ",\"cpu\":" + String(cpuLoad[0] < 0 ? 0 : static_cast<int>((cpuLoad[0] + cpuLoad[1]) / 2 + 0.5f)) + ",\"uptime\":" + String(static_cast<unsigned long>(millis() / 1000)) + ",\"mode\":\"" + modeKey() +
     "\",\"display\":\"" + (displayOn ? "ON" : "OFF") + "\",\"clients\":" + String(ap ? WiFi.softAPgetStationNum() : 0) + ",\"channel\":" + String(apChannel) + ",\"rssi\":" + String(wifiConnected ? WiFi.RSSI() : 0) +
     ",\"drops\":" + String(framesDropped + dropsQueue + dropsWifi) + ",\"lan_restarts\":" + String(lanRestarts);
   if (vmonEnabled) s += ",\"voltage\":" + String(supplyVoltage(), 2);
-  mqtt.publish(mqttBase + "/state", s + "}");
+  if (full && ap) s += ",\"devices\":" + wifiClientsJson();
+  return s + "}";
+}
+
+void mqttPublishState() {
+  mqtt.publish(mqttBase + "/state", haStateJson(false));
   // Verbundene WLAN-Geraete (MAC, IP, Name, Signal ...) als Attribute des Sensors "WiFi devices"
-  if (ap) mqtt.publish(mqttBase + "/clients", String("{\"devices\":") + wifiClientsJson() + "}");
+  if (isApMode()) mqtt.publish(mqttBase + "/clients", String("{\"devices\":") + wifiClientsJson() + "}");
+}
+
+// --- HTTP-Schnittstelle fuer die HACS-Integration (Token oder Webinterface-Sitzung) ---
+bool tokenValid() { return !apiToken.isEmpty() && webServer.hasArg("token") && webServer.arg("token") == apiToken; }
+
+void apiState() { webServer.send(200, "application/json", haStateJson(true)); }
+
+void apiDisplay() {
+  displayOn = webServer.arg("on") == "1";
+  preferences.putBool("disp_on", displayOn);
+  if (displayOn) displayWake();
+  apiState();
+}
+
+void apiRestart() {
+  restartAtMs = millis() + 1000;
+  webServer.send(200, "application/json", "{\"restart\":true}");
+}
+
+// mDNS-Dienst "_netbridge._tcp": damit findet Home Assistant das Geraet selbst
+void mdnsLoop() {
+  static bool started = false;
+  if (started || !mqttNetworkReady()) return;
+  if (MDNS.begin(mqttNodeId.c_str())) {
+    MDNS.addService("netbridge", "tcp", 80);
+    MDNS.addServiceTxt("netbridge", "tcp", "id", mqttNodeId);
+    MDNS.addServiceTxt("netbridge", "tcp", "version", FIRMWARE_VERSION);
+    started = true;
+    Serial.printf("mDNS: %s.local (_netbridge._tcp)\n", mqttNodeId.c_str());
+  }
 }
 
 void mqttLoop() {
@@ -4508,6 +4557,7 @@ String mqttSectionHtml() {
     const char *cls = mqtt.connected() ? "ok" : "wait";
     html += String("<p class='") + cls + "'>" + (mqtt.connected() ? T("Mit dem Broker verbunden.", "Connected to the broker.") : T("Nicht mit dem Broker verbunden.", "Not connected to the broker.")) + "</p>";
   }
+  html += String("<p><small>") + T("Zugangs-Token f&uuml;r die HACS-Integration (Home Assistant): ", "Access token for the HACS integration (Home Assistant): ") + "<code>" + apiToken + "</code></small></p>";
   html += "<form method='post' action='/mqtt'>";
   html += String("<label class='chk'><input type='checkbox' name='mq_on' value='1'") + (mqttEnabled ? " checked" : "") + "><span><b>" + T("Home Assistant (MQTT) aktivieren", "Enable Home Assistant (MQTT)") + "</b></span></label>";
   html += String("<label>") + T("Broker (IP oder Name)", "Broker (IP or name)") + "<input name='mq_host' maxlength='63' value='" + mqttHost + "'></label>";
@@ -4679,6 +4729,9 @@ void setup() {
   webServer.on("/webpass", HTTP_POST, guarded<saveWebPassword>);
   webServer.on("/display", HTTP_POST, guarded<saveDisplay>);
   webServer.on("/mqtt", HTTP_POST, guarded<saveMqtt>);
+  webServer.on("/api/state", HTTP_GET, guarded<apiState>);
+  webServer.on("/api/display", HTTP_POST, guarded<apiDisplay>);
+  webServer.on("/api/restart", HTTP_POST, guarded<apiRestart>);
   webServer.on("/brightness", HTTP_POST, guarded<setDisplayBrightness>);
   webServer.on("/display/frame", HTTP_GET, guarded<sendDisplayFrame>);
   webServer.on("/login", HTTP_POST, doLogin);
@@ -4777,6 +4830,7 @@ void loop() {
   buttonLoop();
   updateCpuLoad();
   mqttLoop();
+  mdnsLoop();
   handleConsole();
   // einmal nach dem Start den kompletten Systemstatus ausgeben
   static bool statusPrinted = false;
