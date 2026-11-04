@@ -14,6 +14,14 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.18.1] – 04.11.2026
+
+### Behoben
+- **Einrichtungsseite im Einrichtungs-WLAN nicht erreichbar / Captive Portal ohne Anmeldefenster.** Das
+  Einrichtungs-WLAN saß immer auf Kanal 1; dort stört die Umgebung so stark, dass die Verbindung zum Handy
+  abbrach, bevor die Seite geladen war („Connection reset by peer“). Ohne eingetragenes Router-WLAN wählt die
+  Bridge jetzt beim Start den ruhigsten Kanal (1, 6 oder 11) und sendet mit 20 MHz Kanalbreite.
+
 ## [3.18.0] – 04.11.2026
 
 ### Neu

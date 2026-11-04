@@ -13,6 +13,14 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.18.1] – 2026-11-04
+
+### Fixed
+- **Setup page not reachable in the setup WiFi / captive portal without a login sheet.** The setup WiFi
+  always used channel 1; interference there is so strong that the connection to the phone dropped before the
+  page had loaded ("Connection reset by peer"). Without a router WiFi the bridge now picks the quietest
+  channel (1, 6 or 11) at startup and transmits with 20 MHz channel width.
+
 ## [3.18.0] – 2026-11-04
 
 ### New

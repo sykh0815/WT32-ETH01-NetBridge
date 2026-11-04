@@ -120,7 +120,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.18.0";
+constexpr char FIRMWARE_VERSION[] = "3.18.1";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -4422,11 +4422,15 @@ void setup() {
     }
   } else {
     WiFi.setHostname(BRIDGE_HOSTNAME);
+    // Ohne Router-WLAN legt allein das Einrichtungs-WLAN den Kanal fest: den ruhigsten waehlen (Kanal 1 ist oft
+    // so voll, dass die Einrichtungsseite nicht fertig geladen wird). Mit Router-WLAN folgt der Kanal dem Router.
+    apChannel = routerSsid.isEmpty() ? pickApChannel() : 1;
     WiFi.mode(WIFI_MODE_APSTA);
     WiFi.setSleep(false);  // kein WLAN-Energiesparen: geringere Latenz, stabilere Bridge
     // DNS-Server fuer die Geraete im Einrichtungs-WLAN ist die Bridge selbst (Captive Portal)
     WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0), IPAddress((uint32_t)0), IPAddress(192, 168, 4, 1));
-    WiFi.softAP(apSsid.c_str(), apPassword);
+    WiFi.softAP(apSsid.c_str(), apPassword, apChannel);
+    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
     {  // DHCP muss die Bridge als DNS-Server anbieten, sonst erreicht die Umleitung des Captive Portals das iPhone nie
       esp_netif_t *netif = WiFi.AP.netif();
       esp_netif_dns_info_t dns{};
