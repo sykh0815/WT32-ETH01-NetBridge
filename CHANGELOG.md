@@ -13,6 +13,19 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.15.0] – 2026-11-04
+
+### New
+- **Web interface reworked:** a menu bar at the top lists all categories (click to jump; the section
+  opens). All categories are collapsed on load – including "Uplink", "WiFi devices" and the "Devices in
+  the home network" list, which used to be loaded permanently.
+- **Live data on demand:** status data (data rate, WiFi devices) is only polled while one of these
+  sections is open; the device list is only transferred while its section is open (`/status?nb=1`).
+  This takes load off the bridge while it is running.
+
+### Fixed
+- The firmware version shown on the status page still read 3.14.5 (version 3.14.6 was missing in the code).
+
 ## [3.14.6] – 2026-11-04
 
 ### Fixed

@@ -14,6 +14,19 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.15.0] – 04.11.2026
+
+### Neu
+- **Webinterface umgebaut:** Oben steht eine Menüleiste mit allen Kategorien (Sprung per Klick, der Bereich
+  klappt dabei auf). Alle Kategorien sind beim Laden eingeklappt – auch „Uplink“, „WLAN-Geräte“ und die
+  Liste „Geräte im Heimnetz“, die vorher dauerhaft geladen wurde.
+- **Live-Daten nur auf Anfrage:** Die Statusdaten (Datenrate, WLAN-Geräte) werden nur noch abgefragt,
+  solange einer dieser Bereiche offen ist; die Geräteliste wird nur bei geöffnetem Bereich übertragen
+  (`/status?nb=1`). Das entlastet die Bridge im Betrieb.
+
+### Behoben
+- Die Firmware-Version in der Statusseite stand noch auf 3.14.5 (Versionsnummer 3.14.6 fehlte im Code).
+
 ## [3.14.6] – 04.11.2026
 
 ### Behoben
