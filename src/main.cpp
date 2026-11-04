@@ -125,7 +125,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.21.0";
+constexpr char FIRMWARE_VERSION[] = "3.21.1";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -4437,7 +4437,7 @@ void mqttPublishDiscovery() {
   mqttDiscovery("sensor", "uptime", "Uptime", "\"val_tpl\":\"{{ value_json.uptime }}\",\"unit_of_meas\":\"s\",\"dev_cla\":\"duration\",\"ent_cat\":\"diagnostic\"");
   mqttDiscovery("sensor", "mode", "Mode", "\"val_tpl\":\"{{ value_json.mode }}\",\"ent_cat\":\"diagnostic\",\"ic\":\"mdi:lan\"");
   if (isApMode()) {
-    sensor("clients", "WiFi devices", "clients", "", "", "mdi:devices");
+    mqttDiscovery("sensor", "clients", "WiFi devices", String("\"val_tpl\":\"{{ value_json.clients }}\",\"stat_cla\":\"measurement\",\"ic\":\"mdi:devices\",\"json_attr_t\":\"") + mqttBase + "/clients\"");
     sensor("channel", "WiFi channel", "channel", "", "", "mdi:wifi");
   } else {
     sensor("rssi", "WiFi signal", "rssi", "dBm", "signal_strength");
@@ -4459,6 +4459,8 @@ void mqttPublishState() {
     ",\"drops\":" + String(framesDropped + dropsQueue + dropsWifi) + ",\"lan_restarts\":" + String(lanRestarts);
   if (vmonEnabled) s += ",\"voltage\":" + String(supplyVoltage(), 2);
   mqtt.publish(mqttBase + "/state", s + "}");
+  // Verbundene WLAN-Geraete (MAC, IP, Name, Signal ...) als Attribute des Sensors "WiFi devices"
+  if (ap) mqtt.publish(mqttBase + "/clients", String("{\"devices\":") + wifiClientsJson() + "}");
 }
 
 void mqttLoop() {

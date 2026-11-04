@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.21.1] – 2026-11-04
+
+### Added
+- **Home Assistant: connected WiFi devices.** The "WiFi devices" sensor carries the device list (MAC, IP,
+  name, vendor, signal, connection time) as attribute `devices` (access point modes).
+
 ## [3.21.0] – 2026-11-04
 
 ### Added
