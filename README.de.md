@@ -303,6 +303,10 @@ Chromecast, Drucker).
 
 Abschnitt „Home Assistant“ im Webinterface (standardmäßig aus): MQTT-Broker, Port, optional Benutzer/Passwort und Topic-Präfix eintragen. Das Gerät erscheint dann automatisch in Home Assistant (MQTT-Discovery) mit Uplink, Datenraten, freiem Heap, CPU-Last, Laufzeit, WLAN-Geräten/Kanal, einem Schalter „Display“ und einer Taste „Neustart“. Es braucht eine IP im Heimnetz und funktioniert daher in den NAT- und Access-Point-Modi.
 
+**Einfacher: HACS-Integration** (kein MQTT-Broker nötig, jedes WLAN-Gerät mit Taste „Abmelden“ und Schalter „Sperren“): [ha-netbridge](https://github.com/sykh0815/ha-netbridge)
+
+[![Öffne deine Home-Assistant-Instanz und dieses Repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sykh0815&repository=ha-netbridge&category=integration)
+
 ## Firewall
 
 Abschnitt „Firewall“ im Webinterface. Sie prüft den Datenverkehr der **angeschlossenen Geräte**

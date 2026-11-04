@@ -298,6 +298,10 @@ devices get their addresses directly from your router and are visible in the hom
 
 Section "Home Assistant" in the web interface (off by default): enter the MQTT broker, port, optional user/password and topic prefix. The device then appears in Home Assistant automatically (MQTT discovery) with uplink, data rates, free heap, CPU load, uptime, WiFi devices/channel, a "Display" switch and a "Restart" button. It needs an IP in the home network, so it works in the NAT and access point modes.
 
+**Easier: HACS integration** (no MQTT broker needed, every WiFi device with a "Disconnect" button and "Block" switch): [ha-netbridge](https://github.com/sykh0815/ha-netbridge)
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sykh0815&repository=ha-netbridge&category=integration)
+
 ## Firewall
 
 Section "Firewall" in the web interface. It checks the traffic of the **connected devices** (device
