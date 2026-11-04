@@ -127,7 +127,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.23.1";
+constexpr char FIRMWARE_VERSION[] = "3.24.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -2291,9 +2291,31 @@ esp_err_t onApNatWifiFrame(void *buffer, uint16_t len, void *eb) {
 }
 
 // Access-Point-Modi: verbundene Geraete merken, MAC-Filter, Empfangsfilter (nach den Standard-Handlern)
+// Sperrliste (Home Assistant): gesperrte WLAN-Geraete werden direkt nach dem Verbinden wieder abgemeldet
+constexpr int BLOCK_MAX = 16;
+uint8_t blockMacs[BLOCK_MAX][6];
+int blockCount = 0;
+
+bool isBlockedMac(const uint8_t *mac) {
+  for (int i = 0; i < blockCount; ++i) if (memcmp(blockMacs[i], mac, 6) == 0) return true;
+  return false;
+}
+
+void blockLoad() {
+  blockCount = 0;
+  if (!preferences.isKey("blk")) return;
+  const size_t len = preferences.getBytes("blk", blockMacs, sizeof(blockMacs));
+  blockCount = static_cast<int>(len / 6);
+}
+
 void onApStaEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData) {
   if (eventId == WIFI_EVENT_AP_STACONNECTED) {
     const wifi_event_ap_staconnected_t *info = static_cast<const wifi_event_ap_staconnected_t *>(eventData);
+    if (isBlockedMac(info->mac)) {
+      Serial.printf("Sperrliste: %s abgewiesen\n", macToString(info->mac).c_str());
+      esp_wifi_deauth_sta(info->aid);
+      return;
+    }
     if (fwEnabled && fwMacFilter && !fwMacListed(info->mac)) {
       Serial.printf("MAC-Filter: %s abgewiesen\n", macToString(info->mac).c_str());
       esp_wifi_deauth_sta(info->aid);
@@ -4472,7 +4494,11 @@ String haStateJson(bool full) {
     "\",\"display\":\"" + (displayOn ? "ON" : "OFF") + "\",\"clients\":" + String(ap ? WiFi.softAPgetStationNum() : 0) + ",\"channel\":" + String(apChannel) + ",\"rssi\":" + String(wifiConnected ? WiFi.RSSI() : 0) +
     ",\"drops\":" + String(framesDropped + dropsQueue + dropsWifi) + ",\"lan_restarts\":" + String(lanRestarts);
   if (vmonEnabled) s += ",\"voltage\":" + String(supplyVoltage(), 2);
-  if (full && ap) s += ",\"devices\":" + wifiClientsJson();
+  if (full && ap) {
+    s += ",\"devices\":" + wifiClientsJson() + ",\"blocked\":[";
+    for (int i = 0; i < blockCount; ++i) s += String(i ? "," : "") + "\"" + macToString(blockMacs[i]) + "\"";
+    s += "]";
+  }
   return s + "}";
 }
 
@@ -4510,6 +4536,35 @@ void apiKick() {
   }
   Serial.printf("WLAN-Geraet abgemeldet (Home Assistant): %s\n", webServer.arg("mac").c_str());
   webServer.send(200, "application/json", "{\"kicked\":true}");
+}
+
+// WLAN-Geraet sperren/entsperren: /api/block?mac=...&on=1|0 (meldet ein verbundenes Geraet gleich ab)
+void apiBlock() {
+  unsigned m[6];
+  uint8_t mac[6];
+  if (!isApMode() || sscanf(webServer.arg("mac").c_str(), "%x:%x:%x:%x:%x:%x", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]) != 6) {
+    webServer.send(400, "application/json", "{\"error\":\"bad request\"}");
+    return;
+  }
+  for (int i = 0; i < 6; ++i) mac[i] = static_cast<uint8_t>(m[i]);
+  const bool on = webServer.arg("on") == "1";
+  int at = -1;
+  for (int i = 0; i < blockCount; ++i) if (memcmp(blockMacs[i], mac, 6) == 0) at = i;
+  if (on && at < 0) {
+    if (blockCount >= BLOCK_MAX) {
+      webServer.send(507, "application/json", "{\"error\":\"list full\"}");
+      return;
+    }
+    memcpy(blockMacs[blockCount++], mac, 6);
+  } else if (!on && at >= 0) {
+    memmove(blockMacs[at], blockMacs[at + 1], (blockCount - at - 1) * 6);
+    --blockCount;
+  }
+  preferences.putBytes("blk", blockMacs, blockCount * 6);
+  Serial.printf("WLAN-Geraet %s (Home Assistant): %s\n", on ? "gesperrt" : "entsperrt", webServer.arg("mac").c_str());
+  uint16_t aid = 0;
+  if (on && esp_wifi_ap_get_sta_aid(mac, &aid) == ESP_OK) esp_wifi_deauth_sta(aid);
+  apiState();
 }
 
 void apiRestart() {
@@ -4652,6 +4707,7 @@ void setup() {
   fwLoad();
   vmonBegin();
   mqttLoad();
+  blockLoad();
   diagIntervalMs = static_cast<uint32_t>(preferences.getUShort("diag_s", 10)) * 1000;
   Serial.println("Konsole: 'help' + Enter zeigt die Befehle (z. B. 'status')");
   if (esp_reset_reason() == ESP_RST_BROWNOUT) Serial.println("ACHTUNG: Letzter Neustart durch Unterspannung (Brownout) - Netzteil und Kabel pruefen!");
@@ -4753,6 +4809,7 @@ void setup() {
   webServer.on("/api/display", HTTP_POST, guarded<apiDisplay>);
   webServer.on("/api/restart", HTTP_POST, guarded<apiRestart>);
   webServer.on("/api/kick", HTTP_POST, guarded<apiKick>);
+  webServer.on("/api/block", HTTP_POST, guarded<apiBlock>);
   webServer.on("/brightness", HTTP_POST, guarded<setDisplayBrightness>);
   webServer.on("/display/frame", HTTP_GET, guarded<sendDisplayFrame>);
   webServer.on("/login", HTTP_POST, doLogin);

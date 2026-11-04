@@ -14,6 +14,13 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.24.0] – 04.11.2026
+
+### Neu
+- **WLAN-Geräte sperren:** `POST /api/block?mac=…&on=1|0`. Gesperrte Geräte werden nach jedem Verbindungsversuch
+  sofort wieder abgemeldet (bis zu 16, dauerhaft gespeichert, Access-Point-Modi). In der HACS-Integration als
+  Schalter „Sperren“ je Gerät; `/api/state` enthält die Liste `blocked`.
+
 ## [3.23.1] – 04.11.2026
 
 ### Geändert

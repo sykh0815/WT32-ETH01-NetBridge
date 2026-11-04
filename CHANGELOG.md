@@ -13,6 +13,13 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.24.0] – 2026-11-04
+
+### Added
+- **Block WiFi devices:** `POST /api/block?mac=…&on=1|0`. Blocked devices are disconnected again right after
+  every connection attempt (up to 16, stored permanently, access point modes). In the HACS integration as a
+  "Block" switch per device; `/api/state` contains the list `blocked`.
+
 ## [3.23.1] – 2026-11-04
 
 ### Changed
