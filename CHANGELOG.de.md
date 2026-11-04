@@ -14,6 +14,18 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.15.2] – 04.11.2026
+
+### Behoben
+- **Access Point (Bridge): Daten an das iPhone kamen kaum durch** (Ping 0,5–1,5 s, über die Hälfte der
+  Frames verworfen). Broadcast/Multicast-Frames bleiben im WLAN-Treiber gepuffert, solange Geräte im
+  Energiesparmodus sind, und belegen die wenigen Sendepuffer. Jetzt gelangen nur noch notwendige
+  Rundsendungen ins WLAN (ARP, DHCP, IPv6-Nachbarsuche; höchstens 15/s) und Geräte-Suche (mDNS, SSDP;
+  höchstens 3/s). Alles andere wird verworfen (Zähler `groupsFiltered` in den Statusdaten).
+
+### Geändert
+- **Menüleiste** neu gestaltet: Schaltflächen als Kapseln, die jede Zeile gleichmäßig füllen, weißer Hintergrund.
+
 ## [3.15.1] – 04.11.2026
 
 ### Geändert

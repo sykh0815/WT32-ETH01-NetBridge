@@ -13,6 +13,18 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.15.2] – 2026-11-04
+
+### Fixed
+- **Access Point (Bridge): data to the iPhone barely got through** (ping 0.5–1.5 s, more than half of the
+  frames dropped). Broadcast/multicast frames stay buffered in the WiFi driver while devices are in power
+  save and occupy the few TX buffers. Now only necessary broadcasts reach the WiFi (ARP, DHCP, IPv6
+  neighbour discovery; at most 15/s) plus device discovery (mDNS, SSDP; at most 3/s). Everything else is
+  dropped (counter `groupsFiltered` in the status data).
+
+### Changed
+- **Menu bar** redesigned: pill-shaped buttons that fill each row evenly, white background.
+
 ## [3.15.1] – 2026-11-04
 
 ### Changed
