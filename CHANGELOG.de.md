@@ -14,6 +14,11 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.26.1] – 04.11.2026
+
+### Geändert
+- **Webinterface:** Das MQTT-Zeichen steht jetzt oben rechts unter der Sprachauswahl statt im Menü.
+
 ## [3.26.0] – 04.11.2026
 
 ### Geändert
