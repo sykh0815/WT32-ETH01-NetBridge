@@ -139,7 +139,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.26.1";
+constexpr char FIRMWARE_VERSION[] = "3.26.2";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -258,6 +258,22 @@ uint32_t lanRxPeak = 0;
 uint32_t lanTxPeak = 0;
 inline void countLanRx(uint32_t len) { __atomic_fetch_add(&lanRxBytes, len, __ATOMIC_RELAXED); }
 inline void countLanTx(uint32_t len) { __atomic_fetch_add(&lanTxBytes, len, __ATOMIC_RELAXED); }
+
+// Senden ueber Ethernet mit Fehlerzaehlung (Ueberwachung in checkLanStall)
+volatile uint32_t lanTxFails = 0;        // Fehler seit dem Start
+volatile uint32_t lanTxConsecFail = 0;   // Fehler in Folge
+volatile int lanTxLastError = 0;
+inline esp_err_t lanTransmit(void *buffer, size_t len) {
+  const esp_err_t result = esp_eth_transmit(ethernetHandle, buffer, len);
+  if (result == ESP_OK) {
+    lanTxConsecFail = 0;
+  } else {
+    lanTxConsecFail = lanTxConsecFail + 1;
+    lanTxFails = lanTxFails + 1;
+    lanTxLastError = result;
+  }
+  return result;
+}
 volatile uint32_t framesToLan = 0;
 volatile uint32_t framesDropped = 0;
 volatile uint32_t dropsQueue = 0;  // AP-Bridge: verworfen, weil die Warteschlange voll war
@@ -1068,7 +1084,7 @@ esp_err_t onWifiFrame(void *buffer, uint16_t len, void *eb) {
   fwLearnDhcp(static_cast<uint8_t *>(buffer), len);
   if (ethernetLinkUp && fwCheckFrame(static_cast<uint8_t *>(buffer), len, false) && rewriteFrame(false, static_cast<uint8_t *>(buffer), len)) {
     sniffDhcp(static_cast<uint8_t *>(buffer), len);  // nach dem Umschreiben: chaddr ist die MAC des LAN-Geraets
-    if (esp_eth_transmit(ethernetHandle, buffer, len) == ESP_OK) {
+    if (lanTransmit(buffer, len) == ESP_OK) {
       framesToLan = framesToLan + 1;
       countLanTx(len);
     } else {
@@ -1372,11 +1388,13 @@ void logDiagnostics() {
   char extra[40] = "";
   const float volts = supplyVoltage();
   if (volts > 0) snprintf(extra, sizeof(extra), " | 5V %.2f V", volts);
+  char txErr[48] = "";
+  if (lanTxFails > 0) snprintf(txErr, sizeof(txErr), " | LAN-Sendefehler %u (zuletzt 0x%x)", static_cast<unsigned>(lanTxFails), lanTxLastError);
   char cpu[16] = "?";
   if (cpuLoad[0] >= 0) snprintf(cpu, sizeof(cpu), "%d/%d %%", static_cast<int>(cpuLoad[0] + 0.5f), static_cast<int>(cpuLoad[1] + 0.5f));
-  Serial.printf("Diag: %lus | %s | Router: %s | WLAN-Geraete: %d | Kanal %u | CPU %s | Heap frei %u, min %u, Block %u%s\n",
+  Serial.printf("Diag: %lus | %s | Router: %s | WLAN-Geraete: %d | Kanal %u | CPU %s | Heap frei %u, min %u, Block %u%s%s\n",
                 static_cast<unsigned long>(millis() / 1000), modeNames[bridgeMode], router.c_str(), WiFi.softAPgetStationNum(), channel,
-                cpu, static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()), extra);
+                cpu, static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()), extra, txErr);
 }
 
 // Captive Portal: Anfragen von Geraeten im Einrichtungs-WLAN an fremde Adressen (z. B. die
@@ -2379,7 +2397,7 @@ esp_err_t onApWifiFrame(void *buffer, uint16_t len, void *eb) {
     const bool group = frame[0] & 0x01;
     if (forBridge || group) deliverCopyToBridge(frame, len);  // Webinterface, ARP, DHCP
     if (!forBridge && ethernetLinkUp) {
-      if (esp_eth_transmit(ethernetHandle, buffer, len) == ESP_OK) {
+      if (lanTransmit(buffer, len) == ESP_OK) {
         framesToLan = framesToLan + 1;
         countLanTx(len);
       } else {
@@ -2400,14 +2418,14 @@ esp_err_t apBridgeNetifTransmit(void *handle, void *buffer, size_t len) {
   const bool toStation = !group && fwIsApStation(frame);
   if (group || toStation) esp_wifi_internal_tx(WIFI_IF_AP, buffer, static_cast<uint16_t>(len));
   if (toStation) return ESP_OK;
-  const esp_err_t result = esp_eth_transmit(ethernetHandle, buffer, len);
+  const esp_err_t result = lanTransmit(buffer, len);
   if (result == ESP_OK) countLanTx(len);
   return result;
 }
 
 // NAT und AP-NAT: Sendeweg des TCP/IP-Stacks ueber Ethernet, mit Bytezaehler (ersetzt den Weg von esp_netif_attach)
 esp_err_t countingNetifTransmit(void *handle, void *buffer, size_t len) {
-  const esp_err_t result = esp_eth_transmit(ethernetHandle, buffer, len);
+  const esp_err_t result = lanTransmit(buffer, len);
   if (result == ESP_OK) countLanTx(len);
   return result;
 }
@@ -4865,25 +4883,41 @@ void setup() {
 // Einmal pro Sekunde: Bytezaehler -> Datenrate (Bit/s), Summen und Hoechstwerte
 // AP-Bridge: Im Heimnetz kommt immer etwas an (ARP, Broadcasts). Bleibt der Ethernet-Empfang 15 s lang aus,
 // haengt der Treiber (beobachtet nach Speicherengpass bei hoher Last) - dann Ethernet neu starten.
+void restartEthernet(const char *reason) {
+  lanRestarts = lanRestarts + 1;
+  lanTxConsecFail = 0;
+  Serial.printf("!! Ethernet: %s (RAM frei %u, min. %u, Sendefehler %u, zuletzt 0x%x) - Ethernet wird neu gestartet\n", reason,
+                static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()), static_cast<unsigned>(lanTxFails), lanTxLastError);
+  esp_eth_stop(ethernetHandle);
+  bool promiscuous = true;
+  esp_eth_ioctl(ethernetHandle, ETH_CMD_S_PROMISCUOUS, &promiscuous);
+  if (esp_eth_start(ethernetHandle) == ESP_OK) ethernetLanReady = true;
+  else Serial.println("!! Ethernet konnte nicht neu gestartet werden");
+}
+
 void checkLanStall() {
   static uint32_t lastRx = 0;
   static uint32_t lastChangeMs = 0;
   const uint32_t rx = __atomic_load_n(&lanRxBytes, __ATOMIC_RELAXED);
-  if (bridgeMode != MODE_AP_BRIDGE || !ethernetLanReady || !ethernetLinkUp || rx != lastRx) {
+  if (bridgeMode != MODE_AP_BRIDGE || !ethernetLanReady || !ethernetLinkUp) {
+    lastRx = rx;
+    lastChangeMs = millis();
+    return;
+  }
+  // Senden faellt aus (viele Fehler in Folge): Ethernet neu starten
+  if (lanTxConsecFail >= 30) {
+    restartEthernet("Senden schlaegt fehl");
+    lastChangeMs = millis();
+    return;
+  }
+  if (rx != lastRx) {
     lastRx = rx;
     lastChangeMs = millis();
     return;
   }
   if (millis() - lastChangeMs < 15000) return;
   lastChangeMs = millis();
-  lanRestarts = lanRestarts + 1;
-  Serial.printf("!! Ethernet: seit 15 s nichts empfangen (RAM frei %u, min. %u) - Ethernet wird neu gestartet\n",
-                static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()));
-  esp_eth_stop(ethernetHandle);
-  bool promiscuous = true;
-  esp_eth_ioctl(ethernetHandle, ETH_CMD_S_PROMISCUOUS, &promiscuous);
-  if (esp_eth_start(ethernetHandle) == ESP_OK) ethernetLanReady = true;
-  else Serial.println("!! Ethernet konnte nicht neu gestartet werden");
+  restartEthernet("seit 15 s nichts empfangen");
 }
 
 void updateLanRates() {

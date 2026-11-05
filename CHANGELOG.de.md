@@ -14,6 +14,14 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.26.2] – 05.11.2026
+
+### Geändert
+- **AP-Bridge: Ethernet-Sendeüberwachung.** Nach langer Laufzeit konnte der Ethernet-Sendeweg ausfallen (Webinterface
+  nicht erreichbar, WLAN-Geräte bekommen keine Adresse, Empfang lief weiter). Sendefehler werden jetzt
+  gezählt und in der Diag-Zeile angezeigt („LAN-Sendefehler“); nach 30 Fehlern in Folge startet das Ethernet
+  automatisch neu (wie bisher bei fehlendem Empfang).
+
 ## [3.26.1] – 04.11.2026
 
 ### Geändert

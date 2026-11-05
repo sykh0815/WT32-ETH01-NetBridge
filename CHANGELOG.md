@@ -13,6 +13,14 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.26.2] – 2026-11-05
+
+### Changed
+- **AP bridge: Ethernet transmit monitoring.** After a long runtime the Ethernet transmit path could stall (web
+  interface unreachable, WiFi devices get no address, receiving kept working). Transmit errors are now
+  counted and shown in the diag line ("LAN-Sendefehler"); after 30 consecutive errors Ethernet restarts
+  automatically (as it already does when nothing is received).
+
 ## [3.26.1] – 2026-11-04
 
 ### Changed
