@@ -139,7 +139,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.26.3";
+constexpr char FIRMWARE_VERSION[] = "3.26.4";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -263,8 +263,12 @@ inline void countLanTx(uint32_t len) { __atomic_fetch_add(&lanTxBytes, len, __AT
 volatile uint32_t lanTxFails = 0;        // Fehler seit dem Start
 volatile uint32_t lanTxConsecFail = 0;   // Fehler in Folge
 volatile int lanTxLastError = 0;
+// esp_eth_transmit ist nicht fuer parallele Aufrufe ausgelegt (WLAN-Task und lwIP-Task senden gleichzeitig): Mutex
 inline esp_err_t lanTransmit(void *buffer, size_t len) {
+  static SemaphoreHandle_t txMutex = xSemaphoreCreateMutex();
+  if (txMutex != nullptr) xSemaphoreTake(txMutex, portMAX_DELAY);
   const esp_err_t result = esp_eth_transmit(ethernetHandle, buffer, len);
+  if (txMutex != nullptr) xSemaphoreGive(txMutex);
   if (result == ESP_OK) {
     lanTxConsecFail = 0;
   } else {

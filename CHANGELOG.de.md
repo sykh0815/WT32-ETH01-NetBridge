@@ -14,6 +14,13 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.26.4] – 06.11.2026
+
+### Behoben
+- **AP-Bridge: Senden über Ethernet wird jetzt serialisiert.** Der WLAN-Task (WLAN → LAN) und der TCP/IP-Task
+  (Webinterface, MQTT) konnten gleichzeitig über Ethernet senden, was der Treiber nicht unterstützt; bei hoher
+  Last (z. B. Speedtest mit mehreren WLAN-Geräten) führte das vermutlich zum dauerhaften Sendeausfall.
+
 ## [3.26.3] – 06.11.2026
 
 ### Behoben

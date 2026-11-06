@@ -13,6 +13,13 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.26.4] – 2026-11-06
+
+### Fixed
+- **AP bridge: Ethernet transmit is now serialized.** The WiFi task (WiFi → LAN) and the TCP/IP task (web
+  interface, MQTT) could send over Ethernet at the same time, which the driver does not support; under heavy
+  load (e.g. a speed test with several WiFi devices) this probably caused the permanent transmit stall.
+
 ## [3.26.3] – 2026-11-06
 
 ### Fixed
