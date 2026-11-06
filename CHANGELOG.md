@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.26.5] – 2026-11-06
+
+### Fixed
+- **Unblocking the last blocked WiFi device is now saved.** Removing the last entry from the block list was only
+  done in RAM; after a reboot the device was blocked again.
+
 ## [3.26.4] – 2026-11-06
 
 ### Fixed

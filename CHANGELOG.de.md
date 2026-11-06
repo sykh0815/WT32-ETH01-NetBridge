@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.26.5] – 06.11.2026
+
+### Behoben
+- **Entsperren des letzten gesperrten WLAN-Geräts wird jetzt gespeichert.** Der letzte Eintrag der Sperrliste wurde
+  nur im RAM entfernt; nach einem Neustart war das Gerät wieder gesperrt.
+
 ## [3.26.4] – 06.11.2026
 
 ### Behoben

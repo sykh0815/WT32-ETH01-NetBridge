@@ -139,7 +139,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.26.4";
+constexpr char FIRMWARE_VERSION[] = "3.26.5";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -4601,7 +4601,9 @@ void apiBlock() {
     memmove(blockMacs[at], blockMacs[at + 1], (blockCount - at - 1) * 6);
     --blockCount;
   }
-  preferences.putBytes("blk", blockMacs, blockCount * 6);
+  // putBytes schreibt bei Laenge 0 nichts: leere Liste muss den Schluessel loeschen
+  if (blockCount > 0) preferences.putBytes("blk", blockMacs, blockCount * 6);
+  else preferences.remove("blk");
   Serial.printf("WLAN-Geraet %s (Home Assistant): %s\n", on ? "gesperrt" : "entsperrt", webServer.arg("mac").c_str());
   uint16_t aid = 0;
   if (on && esp_wifi_ap_get_sta_aid(mac, &aid) == ESP_OK) esp_wifi_deauth_sta(aid);
