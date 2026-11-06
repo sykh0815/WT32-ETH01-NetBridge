@@ -139,7 +139,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.26.2";
+constexpr char FIRMWARE_VERSION[] = "3.26.3";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -4906,6 +4906,15 @@ void checkLanStall() {
   }
   // Senden faellt aus (viele Fehler in Folge): Ethernet neu starten
   if (lanTxConsecFail >= 30) {
+    // Ethernet-Neustart setzt die Sende-DMA nicht zurueck: faellt es danach erneut aus, hilft nur ein Neustart des ESP
+    static uint32_t lastTxRestartMs = 0;
+    if (lastTxRestartMs != 0 && millis() - lastTxRestartMs < 30000) {
+      Serial.println("!! Ethernet: Senden faellt nach Neustart erneut aus - ESP wird neu gestartet");
+      Serial.flush();
+      delay(100);
+      ESP.restart();
+    }
+    lastTxRestartMs = millis();
     restartEthernet("Senden schlaegt fehl");
     lastChangeMs = millis();
     return;

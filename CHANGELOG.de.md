@@ -14,6 +14,14 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.26.3] – 06.11.2026
+
+### Behoben
+- **AP-Bridge: Ausfall des Ethernet-Sendewegs erholt sich jetzt.** Die Log-Analyse zeigte, dass das Senden nach
+  hoher Last mit Fehler 0x101 ausfiel; ein Neustart nur des Ethernet-Treibers half nicht (endlose
+  Neustart-Schleife, Webinterface und WLAN nicht erreichbar). Fällt das Senden binnen 30 s nach einem
+  Ethernet-Neustart erneut aus, startet jetzt der gesamte ESP neu.
+
 ## [3.26.2] – 05.11.2026
 
 ### Geändert

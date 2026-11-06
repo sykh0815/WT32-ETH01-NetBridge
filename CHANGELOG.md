@@ -13,6 +13,14 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.26.3] – 2026-11-06
+
+### Fixed
+- **AP bridge: Ethernet transmit stall now recovers.** Log analysis showed the transmit path failing with error
+  0x101 right after heavy load; restarting only the Ethernet driver did not clear it (endless restart loop,
+  web interface and WiFi unreachable). If transmitting fails again within 30 s after an Ethernet restart,
+  the ESP now reboots completely.
+
 ## [3.26.2] – 2026-11-05
 
 ### Changed
