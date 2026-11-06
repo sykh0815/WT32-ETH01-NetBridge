@@ -56,6 +56,9 @@ if pio pkg exec -p tool-esptoolpy -- esptool.py "${MERGE_ARGS[@]}" >/dev/null 2>
    || esptool "${MERGE_ARGS[@]}" >/dev/null 2>&1; then
   ASSETS+=("$FULL")
   echo "==> Komplett-Datei / full image: $FULL"
+elif [ -f "$BUILD/firmware.factory.bin" ] && cp "$BUILD/firmware.factory.bin" "$FULL"; then
+  ASSETS+=("$FULL")
+  echo "==> Komplett-Datei (PlatformIO factory) / full image (PlatformIO factory): $FULL"
 else
   echo "==> Hinweis: esptool nicht gefunden, Komplett-Datei wird uebersprungen / esptool not found, skipping full image"
 fi
