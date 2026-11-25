@@ -13,6 +13,14 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.27.0] – 2026-11-25
+
+### Added
+- **New web interface design.** On a PC a sidebar groups the sections (Connection, Protection, Device) with a status
+  LED per entry; on a phone a tab bar at the bottom replaces it (rarely used sections under "More"). Clicking an
+  entry shows only that section; "Status" shows the board, operating mode and live tiles. The page follows the
+  system's light or dark setting automatically. The header is coloured by the operating mode.
+
 ## [3.26.5] – 2026-11-06
 
 ### Fixed

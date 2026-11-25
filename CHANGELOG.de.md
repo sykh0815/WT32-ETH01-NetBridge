@@ -14,6 +14,14 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.27.0] – 25.11.2026
+
+### Neu
+- **Neues Design des Webinterfaces.** Am PC gruppiert eine Seitenleiste die Bereiche (Verbindung, Schutz, Gerät) mit
+  einer Status-LED je Eintrag; am Handy ersetzt sie eine Tab-Leiste unten (seltene Bereiche unter „Mehr“). Ein Klick
+  auf einen Eintrag zeigt nur diesen Bereich; „Status“ zeigt Board, Betriebsart und die Live-Kacheln. Die Seite folgt
+  automatisch der hellen oder dunklen Einstellung des Geräts. Der Kopf ist nach Betriebsart eingefärbt.
+
 ## [3.26.5] – 06.11.2026
 
 ### Behoben
