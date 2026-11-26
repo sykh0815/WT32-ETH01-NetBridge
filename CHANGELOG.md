@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.28.0] – 2026-11-26
+
+### Added
+- **Serial console: `mode` command.** `mode` shows the operating mode; `mode nat|bridge|apnat|apbridge` saves a new one
+  and restarts the device. The access point modes require a WiFi password set beforehand in the web interface.
+
 ## [3.27.0] – 2026-11-25
 
 ### Added

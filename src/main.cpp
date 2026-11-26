@@ -139,7 +139,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.27.0";
+constexpr char FIRMWARE_VERSION[] = "3.28.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -4480,12 +4480,35 @@ void runConsoleCommand(String line) {
     preferences.putUShort("diag_s", static_cast<uint16_t>(seconds));
     if (seconds) Serial.printf("Statuszeile alle %ld s\n", seconds);
     else Serial.println("Statuszeile ausgeschaltet ('diag on' schaltet sie wieder ein)");
+  } else if (line == "mode" || line.startsWith("mode ")) {
+    const String value = line.length() > 5 ? line.substring(5) : String();
+    BridgeMode newMode = bridgeMode;
+    if (value == "nat") newMode = MODE_NAT;
+    else if (value == "bridge") newMode = MODE_BRIDGE;
+    else if (value == "apnat") newMode = MODE_AP_NAT;
+    else if (value == "apbridge") newMode = MODE_AP_BRIDGE;
+    else if (!value.isEmpty()) {
+      Serial.println("Unbekannte Betriebsart. Erlaubt: nat | bridge | apnat | apbridge");
+      return;
+    }
+    if (value.isEmpty()) {
+      Serial.printf("Betriebsart: %s (aendern mit 'mode nat|bridge|apnat|apbridge')\n", modeKey().c_str());
+    } else if ((newMode == MODE_AP_NAT || newMode == MODE_AP_BRIDGE) && setupApPassword.isEmpty() && !apOpenChosen) {
+      Serial.println("Access-Point-Betriebsarten brauchen ein WLAN-Passwort: bitte zuerst im Webinterface festlegen.");
+    } else if (newMode == bridgeMode) {
+      Serial.printf("Betriebsart ist bereits %s\n", modeKey().c_str());
+    } else {
+      preferences.putUChar("mode", newMode);
+      Serial.printf("Betriebsart %s gespeichert. Neustart ...\n", value.c_str());
+      restartAtMs = millis() + 200;
+    }
   } else if (line == "reboot") {
     Serial.println("Neustart ...");
     restartAtMs = millis() + 200;
   } else {
     Serial.println("Befehle: status (s)  Systemstatus | tasks (t)  Tasks mit CPU-Anteil und Stack | vmon on|off  Spannungsmessung an IO39 |");
-    Serial.println("         vmon cal 5.02  mit gemessener Spannung kalibrieren | diag on|off|<Sekunden>  Statuszeile | reboot  Neustart");
+    Serial.println("         vmon cal 5.02  mit gemessener Spannung kalibrieren | diag on|off|<Sekunden>  Statuszeile |");
+    Serial.println("         mode [nat|bridge|apnat|apbridge]  Betriebsart anzeigen/aendern (mit Neustart) | reboot  Neustart");
   }
 }
 

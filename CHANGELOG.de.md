@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.28.0] – 26.11.2026
+
+### Neu
+- **Serielle Konsole: Befehl `mode`.** `mode` zeigt die Betriebsart; `mode nat|bridge|apnat|apbridge` speichert eine neue
+  und startet das Gerät neu. Die Access-Point-Betriebsarten brauchen ein zuvor im Webinterface festgelegtes WLAN-Passwort.
+
 ## [3.27.0] – 25.11.2026
 
 ### Neu
