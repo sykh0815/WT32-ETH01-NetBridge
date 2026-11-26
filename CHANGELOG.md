@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.29.2] – 2026-11-26
+
+### Changed
+- **Web interface: light status header.** The header is now light (accent stripe in the colour of the operating mode), so the
+  controller picture is clearly visible. In dark mode the picture sits on a light plate.
+
 ## [3.29.1] – 2026-11-26
 
 ### Changed

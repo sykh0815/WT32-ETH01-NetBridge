@@ -139,7 +139,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.29.1";
+constexpr char FIRMWARE_VERSION[] = "3.29.2";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1188,13 +1188,13 @@ details.sec.cur>summary{pointer-events:none;font-size:18px;border-bottom:1px sol
 details.sec.cur .chev{display:none}
 details.sec.cur{margin-top:0}
 /* Kopf */
-.hero{padding:24px 22px 18px;color:#fff;background:var(--side);border:1px solid var(--sline);border-top:4px solid var(--mc);--mc:#1d82d6}
+.hero{padding:24px 22px 18px;color:var(--ink);background:var(--sf);border:1px solid var(--line);border-top:4px solid var(--mc);--mc:#1d82d6}
 .hero.m-nat{--mc:#1d82d6}.hero.m-bridge{--mc:#1fae6b}.hero.m-apnat{--mc:#9a6fe0}.hero.m-apbridge{--mc:#ee8e2f}
-.hero .hd{margin:0}.hero h1{color:#fff;font-size:28px}.hero .sub{color:#ffffffcc}.hero .board{width:140px}
-.hmode{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--sline);color:#fff;text-decoration:none}
-.hmode .mi{flex:none;display:flex;width:40px;height:40px;align-items:center;justify-content:center;background:var(--mc)}.hmode .mi svg{width:26px;height:26px;color:#fff}
+.hero .hd{margin:0}.hero h1{color:var(--ink);font-size:28px}.hero .sub{color:var(--mute)}.hero .board{width:140px}
+.hmode{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);color:var(--ink);text-decoration:none}
+.hmode .mi{flex:none;display:flex;width:40px;height:40px;align-items:center;justify-content:center;background:var(--mc)}.hmode .mi svg{width:26px;height:26px;color:#fff}.hmode em{color:var(--mute);opacity:1}
 .hmode .mt{flex:1;min-width:0}.hmode b{display:block;font-size:17px}.hmode em{display:block;font-style:normal;font-size:13px;opacity:.9;overflow-wrap:anywhere}
-.hmode .mc{flex:none;font-size:13px;font-weight:700;padding:5px 11px;border:1px solid var(--sline);color:var(--sink)}
+.hmode .mc{flex:none;font-size:13px;font-weight:700;padding:5px 11px;border:1px solid var(--line);color:var(--mute)}
 .tiles{gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:14px 0 10px}
 .tile{border:0;border-radius:0}
 /* Navigation */
@@ -1234,6 +1234,7 @@ details.sec.cur{margin-top:0}
   #moreToggle:checked~.tabs label{color:#fff;background:#ffffff17}
 }
 *{border-radius:0!important}
+@media(prefers-color-scheme:dark){.hero .board{background:#e4eaef;padding:8px;box-sizing:content-box}}
 .pd,.tile .dot,input[type=radio]{border-radius:50%!important}
 input.tg::after{border-radius:0}
 .leg .sw.dn{background:var(--cable)}

@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.29.2] – 26.11.2026
+
+### Geändert
+- **Webinterface: heller Statuskopf.** Der Kopf ist jetzt hell (Akzentstreifen in der Farbe der Betriebsart), damit das Bild des
+  Controllers gut erkennbar ist. Im Dunkelmodus liegt das Bild auf einer hellen Platte.
+
 ## [3.29.1] – 26.11.2026
 
 ### Geändert
