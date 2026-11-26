@@ -14,6 +14,16 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.30.0] – 26.11.2026
+
+### Hinzugefügt
+- **Web-Konsole.** Neuer Bereich „Konsole“ im Webinterface: dieselben Befehle wie in der seriellen Konsole (`help`, `status`,
+  `mode`, `ap`, `wifi`, `tasks`, `reboot` …), mit Ausgabe und Befehlsverlauf (Pfeiltasten). Geschützt durch die Web-Anmeldung.
+
+### Geändert
+- **Betriebsart-Auswahl: Router-WLAN direkt bei NAT bzw. Bridge.** Wer „NAT“ oder „Bridge“ wählt, sieht jetzt direkt im
+  Formular das Router-WLAN (WLAN-Suche, Name, Passwort), das zusammen mit der Betriebsart gespeichert wird. Der WLAN-Name ist Pflicht.
+
 ## [3.29.2] – 26.11.2026
 
 ### Geändert

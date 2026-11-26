@@ -65,6 +65,8 @@ void resetReconnect();
 void resumeRouterConnection();
 void saveSettings();
 void saveMode();
+void runConsoleCommand(String line);
+void apiConsole();
 void saveApPassword();
 bool isValidWifiPassword(const String &password);
 void onEthernetEvent(void *argument, esp_event_base_t eventBase, int32_t eventId, void *eventData);
@@ -132,6 +134,7 @@ const char ICON_PHONE[] = "<rect x='6.5' y='2.5' width='11' height='19' rx='2.5'
 const char ICON_HOME[] = "<path d='M3 11.5l9-8 9 8'/><path d='M5.5 9.5V20h13V9.5'/><path d='M10 20v-5h4v5'/>";
 const char ICON_NODES[] = "<circle cx='12' cy='5' r='2.2'/><circle cx='5' cy='19' r='2.2'/><circle cx='19' cy='19' r='2.2'/><path d='M12 7.2v4.3M12 11.5l-5.8 5.6M12 11.5l5.8 5.6'/>";
 const char ICON_BROADCAST[] = "<circle cx='12' cy='12' r='1.8'/><path d='M8.2 8.2a5.4 5.4 0 0 0 0 7.6M15.8 8.2a5.4 5.4 0 0 1 0 7.6M5.4 5.4a9.4 9.4 0 0 0 0 13.2M18.6 5.4a9.4 9.4 0 0 1 0 13.2'/>";
+const char ICON_TERM[] = "<rect x='3' y='4.5' width='18' height='15' rx='1.5'/><path d='M7 10l3 2.2L7 14.4M12.5 15h4.5'/>";
 const char ICON_HA[] = "<path d='M3 12.5L12 4l9 8.5V19a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19z'/><path d='M12 20.5v-7M12 15.5l3-3M12 17.5l-3-3'/><circle cx='15.5' cy='12' r='1' fill='currentColor'/><circle cx='8.5' cy='14' r='1' fill='currentColor'/>";
 const char ICON_MQTT[] = "<path d='M4 10a10 10 0 0 1 10 10M4 4.5A15.5 15.5 0 0 1 19.5 20'/><circle cx='5' cy='19' r='1.4' fill='currentColor'/>";
 const char FW_ICON_DEFAULT[] = "<path d='M4 12h12M12 6l6 6-6 6'/><path d='M20 5v14'/>";
@@ -139,7 +142,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.29.2";
+constexpr char FIRMWARE_VERSION[] = "3.30.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1156,9 +1159,12 @@ small,.sub,.group,.hits,.leg,.fwstat,.mode p,.dstate small,table.info td:first-c
 input,select,textarea{background:var(--bg);color:var(--ink);border-color:var(--line)}
 .fwrule input,.fwrule select{background:var(--bg);color:var(--ink);border-color:var(--line)}
 label.mode,.fwopt,.fwbox,.dgrp,.bri,.fwrule,.network,.spark,.tw,details.sec{background:var(--sf);border-color:var(--line)}
-label.mode:has(input:checked),.fwopt:has(input.tg:checked),.apfields{background:var(--soft);border-color:var(--cable)}
+label.mode:has(input:checked),.fwopt:has(input.tg:checked),.apfields,.wlfields{background:var(--soft);border-color:var(--cable)}
 .fwopt.main:has(input.tg:checked){background:var(--okbg);border-color:var(--ok)}
-.apfields,.bri input[type=range],.mode input{accent-color:var(--cable)}
+.apfields,.wlfields,.bri input[type=range],.mode input{accent-color:var(--cable)}
+.wlfields{display:none;margin-top:12px;padding:6px 16px 14px;border:2px solid var(--cable)}
+form:has(input[value=nat]:checked) .wlfields,form:has(input[value=bridge]:checked) .wlfields{display:block}
+.wlfields>small{display:block;margin:4px 0 0}
 button,.menu a.act{background:var(--cable);color:var(--cink)}
 button.secondary{background:var(--soft);color:var(--cable)}
 input.tg:checked{background:var(--cable)}
@@ -1239,6 +1245,8 @@ details.sec.cur{margin-top:0}
 input.tg::after{border-radius:0}
 .leg .sw.dn{background:var(--cable)}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.conout{margin:8px 0;padding:10px;height:320px;overflow:auto;white-space:pre-wrap;word-break:break-all;background:#0d1318;color:#cfe3d4;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line)}
+.conform{display:flex;gap:8px;align-items:stretch}.conform input{flex:1;margin:0;font-family:ui-monospace,Menlo,Consolas,monospace}.conform button{margin:0}
 )CSS";
 
 String pageHeader(const String &title) {
@@ -1455,7 +1463,7 @@ const char *const JS_TEXT_DE = "var L={notConnected:'Nicht mit dem Router verbun
   "addr:'Adressvergabe',byRouter:'direkt durch den Router',appears:'Ger\\u00e4t erscheint im Router als MAC',toWifi:'Frames LAN \\u2192 WLAN',toLan:'Frames WLAN \\u2192 LAN',"
   "dropped:'Verworfen',gw:'Gateway / DNS',lease:'Lease-Dauer',bridgeMac:'MAC der Bridge (LAN)',searching:'Suche nach WLANs ...',"
   "scanFail:'Die WLAN-Suche ist fehlgeschlagen. Bitte erneut versuchen.',none:'Keine WLANs gefunden.',hidden:'(verstecktes WLAN)',secured:' (gesichert)',"
-  "selected:'Ausgew\\u00e4hlt: ',mismatch:'Die beiden Eingaben stimmen nicht \\u00fcberein.',confirmPw:'Passwort \\u00e4ndern? Die Bridge startet danach neu.',noUplink:'Kein Kabel erkannt. Verbinde den LAN-Port mit deinem Router.',homeIp:'IP der Bridge im Heimnetz',gateway:'Gateway',waitingIp:'wartet auf Adresse vom Router',noClients:'Noch keine WLAN-Ger\\u00e4te verbunden.',block:'Sperren',unblock:'Entsperren',blocked:'gesperrt',blockAsk:'Dieses Ger\\u00e4t sperren? Es wird sofort abgemeldet und bei jedem Verbindungsversuch abgewiesen.',ackNeeded:'Bitte best\\u00e4tige den Hinweis zum Webinterface.',add:'zur Liste',pwNeeded:'Bitte ein WLAN-Passwort f\\u00fcr den Access Point festlegen (mindestens 8 Zeichen).',nextTry:'n\\u00e4chster Versuch in',"
+  "selected:'Ausgew\\u00e4hlt: ',ssidNeeded:'Bitte den WLAN-Namen des Routers eintragen.',mismatch:'Die beiden Eingaben stimmen nicht \\u00fcberein.',confirmPw:'Passwort \\u00e4ndern? Die Bridge startet danach neu.',noUplink:'Kein Kabel erkannt. Verbinde den LAN-Port mit deinem Router.',homeIp:'IP der Bridge im Heimnetz',gateway:'Gateway',waitingIp:'wartet auf Adresse vom Router',noClients:'Noch keine WLAN-Ger\\u00e4te verbunden.',block:'Sperren',unblock:'Entsperren',blocked:'gesperrt',blockAsk:'Dieses Ger\\u00e4t sperren? Es wird sofort abgemeldet und bei jedem Verbindungsversuch abgewiesen.',ackNeeded:'Bitte best\\u00e4tige den Hinweis zum Webinterface.',add:'zur Liste',pwNeeded:'Bitte ein WLAN-Passwort f\\u00fcr den Access Point festlegen (mindestens 8 Zeichen).',nextTry:'n\\u00e4chster Versuch in',"
   "name:'Ger\\u00e4tename',vendor:'Hersteller',noVendor:'Hersteller unbekannt',privMac:'Private MAC',privHint:'Zuf\\u00e4llige Adresse zum Schutz der Privatsph\\u00e4re \\u2013 der Hersteller ist daran nicht erkennbar.',"
   "connFor:'verbunden seit',leaseShort:'Adresse g\\u00fcltig noch',leaseLeft:'Adresse g\\u00fcltig noch',expired:'abgelaufen',webPwShort:'Das Passwort muss mindestens 8 Zeichen lang sein.',fwMax:'Maximal 32 Regeln.',noCableShort:'kein Kabel',notConnShort:'nicht verbunden',devices:' Ger\\u00e4te',oneDevice:'1 Ger\\u00e4t',rate:'Datenrate',peak:'H\\u00f6chstwert',total:'Daten seit Start',last2:'letzte 2 Minuten',now:'jetzt',noNeighbors:'Noch keine Ger\\u00e4te erkannt.',router:'Router',seenCol:'Zuletzt',justNow:'gerade eben',agoA:'vor ',agoB:'',dec:','};";
 const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router',noCable:'No cable detected. Plug the cable firmly into the device and the bridge.',"
@@ -1464,7 +1472,7 @@ const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router
   "addr:'Address assignment',byRouter:'directly by the router',appears:'Device appears in the router with MAC',toWifi:'Frames LAN \\u2192 WiFi',toLan:'Frames WiFi \\u2192 LAN',"
   "dropped:'Dropped',gw:'Gateway / DNS',lease:'Lease time',bridgeMac:'Bridge MAC (LAN)',searching:'Searching for WiFi networks ...',"
   "scanFail:'The WiFi scan failed. Please try again.',none:'No WiFi networks found.',hidden:'(hidden network)',secured:' (secured)',"
-  "selected:'Selected: ',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.',noUplink:'No cable detected. Connect the LAN port to your router.',homeIp:'Bridge IP in the home network',gateway:'Gateway',waitingIp:'waiting for an address from the router',noClients:'No WiFi devices connected yet.',block:'Block',unblock:'Unblock',blocked:'blocked',blockAsk:'Block this device? It is disconnected immediately and rejected on every connection attempt.',ackNeeded:'Please confirm the note about the web interface.',add:'add to list',pwNeeded:'Please set a WiFi password for the access point (at least 8 characters).',nextTry:'next attempt in',"
+  "selected:'Selected: ',ssidNeeded:'Please enter the WiFi name of the router.',mismatch:'The two entries do not match.',confirmPw:'Change the password? The bridge will restart afterwards.',noUplink:'No cable detected. Connect the LAN port to your router.',homeIp:'Bridge IP in the home network',gateway:'Gateway',waitingIp:'waiting for an address from the router',noClients:'No WiFi devices connected yet.',block:'Block',unblock:'Unblock',blocked:'blocked',blockAsk:'Block this device? It is disconnected immediately and rejected on every connection attempt.',ackNeeded:'Please confirm the note about the web interface.',add:'add to list',pwNeeded:'Please set a WiFi password for the access point (at least 8 characters).',nextTry:'next attempt in',"
   "name:'Device name',vendor:'Manufacturer',noVendor:'unknown manufacturer',privMac:'Private MAC',privHint:'Randomized address for privacy \\u2013 the manufacturer cannot be derived from it.',"
   "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired',webPwShort:'The password must be at least 8 characters long.',fwMax:'At most 32 rules.',noCableShort:'no cable',notConnShort:'not connected',devices:' devices',oneDevice:'1 device',rate:'Data rate',peak:'Peak',total:'Data since start',last2:'last 2 minutes',now:'now',noNeighbors:'No devices detected yet.',router:'Router',seenCol:'Last seen',justNow:'just now',agoA:'',agoB:' ago',dec:'.'};";
 
@@ -1576,15 +1584,19 @@ const char MAIN_SCRIPT[] =
     "if(br){h+=row(L.addr,L.byRouter);if(l.staMac)h+=row(L.appears,l.staMac);h+=row(L.toWifi,l.toWifi);h+=row(L.toLan,l.toLan);h+=row(L.dropped,l.dropped);}"
     "else{h+=row(L.gw,'192.168.50.1 / 1.1.1.1');if(l.leaseMinutes)h+=row(L.lease,l.leaseMinutes+' min');if(l.bridgeMac)h+=row(L.bridgeMac,l.bridgeMac);}"
     "box.innerHTML='<table class=\\'info\\'>'+h+'</table>';}"
-    "function scan(){document.getElementById('networks').textContent=L.searching;poll(true,0);}"
+    "var NB='networks';function scan(id){NB=id||'networks';document.getElementById(NB).textContent=L.searching;poll(true,0);}"
     "function poll(start,errors){fetch('/networks'+(start?'?start=1':'')).then(r=>{if(r.status==401){location.reload();throw 0;}return r.json();}).then(s=>{"
     "if(s.state=='running'){setTimeout(()=>poll(false,0),800);return;}"
-    "if(s.state!='done'){document.getElementById('networks').textContent=L.scanFail;return;}"
-    "showNetworks(s.networks);}).catch(()=>{if(errors<8)setTimeout(()=>poll(false,errors+1),1500);else document.getElementById('networks').textContent=L.scanFail;});}"
-    "function showNetworks(list){let box=document.getElementById('networks');box.textContent='';if(!list.length){box.textContent=L.none;return;}"
+    "if(s.state!='done'){document.getElementById(NB).textContent=L.scanFail;return;}"
+    "showNetworks(s.networks);}).catch(()=>{if(errors<8)setTimeout(()=>poll(false,errors+1),1500);else document.getElementById(NB).textContent=L.scanFail;});}"
+    "function showNetworks(list){let box=document.getElementById(NB);box.textContent='';if(!list.length){box.textContent=L.none;return;}"
     "list.forEach(n=>{let b=document.createElement('button');b.type='button';b.className='network';let name=document.createElement('b');name.textContent=n.ssid||L.hidden;"
     "let detail=document.createElement('small');detail.textContent=n.rssi+' dBm - '+n.percent+' % - '+n.encryption+(n.secured?L.secured:'');b.append(name,detail);"
-    "b.onclick=()=>{document.querySelector('[name=ssid]').value=n.ssid;box.textContent=L.selected+n.ssid;};box.appendChild(b);});}"
+    "b.onclick=()=>{document.querySelector(NB=='networks2'?'[name=r_ssid]':'[name=ssid]').value=n.ssid;box.textContent=L.selected+n.ssid;};box.appendChild(b);});}"
+    "var CH=[],CI=0;function conSend(){var i=document.getElementById('conin'),c=i.value.trim();if(!c)return false;CH.push(c);CI=CH.length;i.value='';var o=document.getElementById('conout');o.textContent+='> '+c+'\\n';"
+    "fetch('/api/console',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'cmd='+encodeURIComponent(c)}).then(r=>{if(r.status==401){location.reload();throw 0;}return r.text();})"
+    ".then(t=>{o.textContent+=t.replace(/^\\n?> .*\\n/,'')+'\\n';o.scrollTop=o.scrollHeight;}).catch(()=>{o.textContent+='(Fehler/error)\\n';});return false;}"
+    "document.addEventListener('keydown',e=>{if(e.target.id!='conin'||!CH.length)return;if(e.key=='ArrowUp'){CI=Math.max(0,CI-1);e.target.value=CH[CI];e.preventDefault();}else if(e.key=='ArrowDown'){CI=Math.min(CH.length,CI+1);e.target.value=CH[CI]||'';e.preventDefault();}});"
     "status();let tick=0;setInterval(()=>{if(document.hidden)return;if(window.apb&&(tick++%3))return;if(liveOpen())status();},2000);</script>";
 
 void showHome() {
@@ -1667,6 +1679,7 @@ void showHome() {
   if (!apMode) menuItem("ap", T("Einrichtungs-WLAN", "Setup WiFi"), ICON_BROADCAST, "", nullptr);
   menuItem("display", "Display", SEC_ICON_DISPLAY, "", nullptr);
   menuItem("ha", "Home Assistant / MQTT", ICON_HA, mqttEnabled ? (mqttIsConnected() ? "ok" : "warn") : "", nullptr);
+  menuItem("console", T("Konsole", "Console"), ICON_TERM, "", nullptr);
   menu += languageSwitchHtml() + "</nav>";
   tabs += String("<label for='moreToggle'>") + fwIcon("<circle cx='5' cy='12' r='1.2'/><circle cx='12' cy='12' r='1.2'/><circle cx='19' cy='12' r='1.2'/>") + T("Mehr", "More") + "</label></nav>";
   menu += String("<input type='checkbox' id='moreToggle' aria-label='") + T("Weitere Bereiche", "More sections") + "'><div class='more'>" + more + "</div>" + tabs;
@@ -1711,9 +1724,18 @@ void showHome() {
                     : T("Mit diesem Namen und Passwort verbinden sich deine Ger&auml;te. Es ist dasselbe WLAN wie unten unter &bdquo;Einrichtungs-WLAN&ldquo;.",
                         "Your devices connect with this name and password. It is the same WiFi as below under \"Setup WiFi\".")) + "</small></p></div>";
 
+  // Router-WLAN direkt bei den Modi NAT/Bridge (nur sichtbar, wenn eine davon gewaehlt ist)
+  const String routerFields = String("<div class='wlfields'><b>") + T("WLAN deines Routers", "Your router's WiFi") + "</b><small>" +
+    T("Die Bridge verbindet sich mit diesem WLAN und leitet den Verkehr des LAN-Ger&auml;ts dorthin weiter.", "The bridge joins this WiFi and forwards the traffic of the LAN device to it.") + "</small>"
+    "<button class='secondary' type='button' onclick=\"scan('networks2')\">" + T("Verf&uuml;gbare WLANs suchen", "Search for WiFi networks") + "</button><div id='networks2'></div>"
+    "<label>" + T("WLAN-Name des Routers", "Router WiFi name") + "<input name='r_ssid' maxlength='32' value='" + htmlEscape(routerSsid) + "'></label>"
+    "<label>" + T("WLAN-Passwort des Routers", "Router WiFi password") + "<input name='r_pass' type='password' maxlength='63' autocomplete='off' placeholder='" +
+      (routerSsid.isEmpty() ? String("") : String(T("Leer lassen, um das bisherige zu behalten", "Leave empty to keep the current one"))) + "'></label></div>";
+
   auto modeForm = [&]() -> String { return String("<h2>") + T("Betriebsart", "Operating mode") + "</h2>"
     "<form method='post' action='/mode' onsubmit=\"var m=this.querySelector('input[name=mode]:checked');if(!m)return true;"
     "if(m.value.indexOf('ap')==0&&!this.m_open.checked){if(this.m_pass.value!=this.m_repeat.value){alert(L.mismatch);return false;}" + (apHasPassword ? "" : "if(!this.m_pass.value){alert(L.pwNeeded);return false;}") + "}"
+    "if(m.value.indexOf('ap')!=0&&!this.r_ssid.value){alert(L.ssidNeeded);return false;}"
     "if(m.value=='apbridge'&&!this.ack.checked){alert(L.ackNeeded);return false;}return true;\">"
     "<p class='group'>" + T("WLAN-Client: Ger&auml;t am LAN-Port, Bridge im WLAN deines Routers", "WiFi client: device on the LAN port, bridge joins your router's WiFi") + "</p>" +
     modeCard("nat", MODE_NAT, natIcon, T("NAT &ndash; eigenes Netzwerk", "NAT &ndash; own network"),
@@ -1733,7 +1755,7 @@ void showHome() {
       T("Der LAN-Port wird mit dem Router verbunden. WLAN-Ger&auml;te bekommen ihre Adressen direkt vom Router und sind im Heimnetz sichtbar (AirPlay, Chromecast, Drucker).",
         "Connect the LAN port to your router. WiFi devices get their addresses directly from your router and are visible in your home network (AirPlay, Chromecast, printers)."),
       String("<span class='badge slow'>") + T("Webinterface &uuml;ber die IP vom Router", "Web interface via the IP from the router") + "</span> <span class='badge slow'>" + T("bis ca. 8 WLAN-Ger&auml;te, nur 2,4 GHz", "up to approx. 8 WiFi devices, 2.4 GHz only") + "</span>") +
-    apFields + apBridgeWarning +
+    routerFields + apFields + apBridgeWarning +
     "<button type='submit'>" + T("&Uuml;bernehmen und neu starten", "Apply and restart") + "</button></form>"; };
 
   const bool apOpen = setupApPassword.isEmpty();
@@ -1871,6 +1893,9 @@ void showHome() {
   }
   out(collapsible(displaySectionHtml(), "display", SEC_ICON_DISPLAY, displayStatusPill(), false));
   out(collapsible(mqttSectionHtml(), "ha", ICON_HA, mqttBadge(), false));
+  out(collapsible(String("<h2>") + T("Konsole", "Console") + "</h2><p><small>" + T("Dieselben Befehle wie in der seriellen Konsole. Mit <b>help</b> siehst du alle Befehle; <b>&uarr;</b> holt den letzten Befehl zur&uuml;ck.", "The same commands as in the serial console. <b>help</b> lists all commands; <b>&uarr;</b> recalls the last command.") + "</small></p>"
+    "<pre id='conout' class='conout'></pre><form class='conform' onsubmit='return conSend()'><input id='conin' autocomplete='off' autocapitalize='off' spellcheck='false' placeholder='help'><button type='submit'>" + T("Senden", "Send") + "</button></form>",
+    "console", ICON_TERM, String(""), false));
   out(collapsible(webPasswordSectionHtml(), "webpw", SEC_ICON_LOCK, webPasswordSet() ? pill("ok", T("gesetzt", "set")) : pill("warn", T("kein Passwort", "no password")), false));
   out("<script>");
   webServer.sendContent(uiEnglish ? JS_TEXT_EN : JS_TEXT_DE);
@@ -2006,6 +2031,27 @@ void saveMode() {
     if (!applyApCredentials(webServer.arg("m_ssid"), webServer.arg("m_pass"), webServer.arg("m_repeat"), error, openWifi)) {
       sendModeError(error);
       return;
+    }
+  }
+
+  if (!newIsAp) {
+    // Router-WLAN kommt direkt aus dem Formular der Betriebsart
+    String rs = webServer.arg("r_ssid");
+    rs.trim();
+    const String rp = webServer.arg("r_pass");
+    if (rs.isEmpty() || rs.length() > 32) {
+      sendModeError(T("Bitte den WLAN-Namen des Routers eintragen (1 bis 32 Zeichen).", "Please enter the router's WiFi name (1 to 32 characters)."));
+      return;
+    }
+    if (rs != routerSsid) {
+      routerChannel = 0;  // anderes WLAN: auf allen Kanaelen suchen
+      preferences.putUChar("r_chan", 0);
+    }
+    routerSsid = rs;
+    preferences.putString("ssid", routerSsid);
+    if (!rp.isEmpty()) {
+      routerPassword = rp;
+      preferences.putString("password", routerPassword);
     }
   }
 
@@ -4354,17 +4400,34 @@ String uptimeText() {
   return String(text);
 }
 
+// Konsolenausgabe: geht an die serielle Schnittstelle und, waehrend ein Web-Befehl laeuft, zusaetzlich in einen Puffer
+class ConsoleOut : public Print {
+public:
+  String *capture = nullptr;
+  size_t write(uint8_t c) override {
+    Serial.write(c);
+    if (capture && capture->length() < 8000) *capture += static_cast<char>(c);
+    return 1;
+  }
+  size_t write(const uint8_t *buf, size_t n) override {
+    Serial.write(buf, n);
+    if (capture && capture->length() < 8000) capture->concat(reinterpret_cast<const char *>(buf), n);
+    return n;
+  }
+};
+ConsoleOut con;
+
 void printRow(const char *label, const String &value) {
   String line = String("   ") + label + " ";
   while (line.length() < 21) line += ".";  // Beschriftungen ohne Umlaute, damit die Punkte buendig sind
-  Serial.printf("%s %s\n", line.c_str(), value.c_str());
+  con.printf("%s %s\n", line.c_str(), value.c_str());
 }
 
 void printSystemStatus() {
   char text[96];
-  Serial.println();
-  Serial.printf("\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90 %s %s \xC2\xB7 Systemstatus \xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\n", PRODUCT_NAME, FIRMWARE_VERSION);
-  Serial.println(" System");
+  con.println();
+  con.printf("\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90 %s %s \xC2\xB7 Systemstatus \xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\n", PRODUCT_NAME, FIRMWARE_VERSION);
+  con.println(" System");
   printRow("Laufzeit", uptimeText());
   const esp_reset_reason_t reason = esp_reset_reason();
   printRow("Letzter Start", resetReasonText(reason));
@@ -4377,7 +4440,7 @@ void printSystemStatus() {
   snprintf(text, sizeof(text), "%lu KB von %lu KB (%d %%)", static_cast<unsigned long>(sketch / 1024), static_cast<unsigned long>(slot / 1024), slot ? static_cast<int>(100.0f * sketch / slot + 0.5f) : 0);
   printRow("Firmware", text);
 
-  Serial.println(" CPU");
+  con.println(" CPU");
   printRow("Kern 0", percentBar(cpuLoad[0]));
   printRow("Kern 1", percentBar(cpuLoad[1]));
   if (taskLoadCount > 0) {
@@ -4389,7 +4452,7 @@ void printSystemStatus() {
     printRow("Top-Tasks", top);
   }
 
-  Serial.println(" Speicher");
+  con.println(" Speicher");
   const uint32_t heapSize = ESP.getHeapSize();
   const uint32_t heapFree = ESP.getFreeHeap();
   printRow("RAM belegt", percentBar(heapSize ? 100.0f * (heapSize - heapFree) / heapSize : -1));
@@ -4401,7 +4464,7 @@ void printSystemStatus() {
     printRow("Einstellungen", text);
   }
 
-  Serial.println(" Versorgung");
+  con.println(" Versorgung");
   const float volts = supplyVoltage();
   if (volts < 0) {
     printRow("5V-Eingang", "nicht gemessen (optional: Spannungsteiler an IO39, Befehl 'vmon on')");
@@ -4413,7 +4476,7 @@ void printSystemStatus() {
   }
   printRow("Brownout", reason == ESP_RST_BROWNOUT ? "JA - letzter Neustart durch Unterspannung!" : "nein");
 
-  Serial.println(" Netzwerk");
+  con.println(" Netzwerk");
   static const char *const modes[] = {"NAT", "Bridge", "Access Point (NAT)", "Access Point (Bridge)"};
   printRow("Betriebsart", modes[bridgeMode]);
   if (ethernetLinkUp) {
@@ -4434,50 +4497,50 @@ void printSystemStatus() {
   const String ip = isApMode() ? displayUplinkIp() : (wifiConnected && bridgeMode == MODE_NAT ? WiFi.localIP().toString() : String("192.168.4.1 (Setup-WLAN)"));
   printRow("Webinterface", ip.isEmpty() ? String("wartet auf IP") : String("http://") + ip);
   printRow("Display", gfx == nullptr ? String("keins") : gfx->isColor() ? String("TFT ST7735 ") + String(gfx->width()) + "x" + String(gfx->height()) : String("OLED 128x64"));
-  Serial.println(" Befehle: help (zeigt alle), status, tasks, mode, ap, wifi, vmon, diag, reboot");
-  Serial.println();
+  con.println(" Befehle: help (zeigt alle), status, tasks, mode, ap, wifi, vmon, diag, reboot");
+  con.println();
 }
 
 void printTasks() {
-  Serial.println();
-  Serial.println(" Task             Kern   CPU     Stack frei");
+  con.println();
+  con.println(" Task             Kern   CPU     Stack frei");
   for (int i = 0; i < taskLoadCount; ++i) {
     char core[4];
     if (taskLoads[i].core < 0) snprintf(core, sizeof(core), "-");
     else snprintf(core, sizeof(core), "%d", taskLoads[i].core);
-    Serial.printf(" %-16s %-4s %5.1f %%   %5lu Bytes\n", taskLoads[i].name, core, taskLoads[i].percent, static_cast<unsigned long>(taskLoads[i].stackFree));
+    con.printf(" %-16s %-4s %5.1f %%   %5lu Bytes\n", taskLoads[i].name, core, taskLoads[i].percent, static_cast<unsigned long>(taskLoads[i].stackFree));
   }
-  if (taskLoadCount == 0) Serial.println(" (noch keine Messung - in 2 s erneut versuchen)");
-  Serial.println();
+  if (taskLoadCount == 0) con.println(" (noch keine Messung - in 2 s erneut versuchen)");
+  con.println();
 }
 
 // Befehlsuebersicht der Konsole
 void printConsoleHelp() {
-  Serial.println(" Befehle (Eingabe mit Enter, 115200 Baud):");
-  Serial.println("   help                     diese Uebersicht");
-  Serial.println("   status (s)               kompletter Systemstatus");
-  Serial.println("   tasks (t)                Tasks mit CPU-Anteil und Stack");
-  Serial.println("   mode [nat|bridge|apnat|apbridge]   Betriebsart anzeigen/aendern (mit Neustart)");
-  Serial.println("   ap <name> <passwort>     WLAN der Bridge setzen (Passwort 8-63 Zeichen, ohne Leerzeichen)");
-  Serial.println("   ap open                  WLAN der Bridge bewusst offen lassen | 'ap' zeigt den Stand");
-  Serial.println("   wifi <name> <passwort>   Router-WLAN setzen und verbinden | 'wifi' zeigt den Stand");
-  Serial.println("   vmon on|off|cal <Volt>   Spannungsmessung an IO39");
-  Serial.println("   diag on|off|<Sekunden>   Statuszeile (standardmaessig aus)");
-  Serial.println("   reboot                   Neustart");
+  con.println(" Befehle (Eingabe mit Enter, 115200 Baud):");
+  con.println("   help                     diese Uebersicht");
+  con.println("   status (s)               kompletter Systemstatus");
+  con.println("   tasks (t)                Tasks mit CPU-Anteil und Stack");
+  con.println("   mode [nat|bridge|apnat|apbridge]   Betriebsart anzeigen/aendern (mit Neustart)");
+  con.println("   ap <name> <passwort>     WLAN der Bridge setzen (Passwort 8-63 Zeichen, ohne Leerzeichen)");
+  con.println("   ap open                  WLAN der Bridge bewusst offen lassen | 'ap' zeigt den Stand");
+  con.println("   wifi <name> <passwort>   Router-WLAN setzen und verbinden | 'wifi' zeigt den Stand");
+  con.println("   vmon on|off|cal <Volt>   Spannungsmessung an IO39");
+  con.println("   diag on|off|<Sekunden>   Statuszeile (standardmaessig aus)");
+  con.println("   reboot                   Neustart");
 }
 
 // Kurze Startseite direkt nach dem Hochfahren (der komplette Systemstatus folgt nach 15 s)
 void printStartInfo() {
   static const char *const modes[] = {"NAT", "Bridge", "Access Point (NAT)", "Access Point (Bridge)"};
-  Serial.println();
-  Serial.printf("\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90 %s %s \xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\n", PRODUCT_NAME, FIRMWARE_VERSION);
-  Serial.printf(" Betriebsart : %s\n", modes[bridgeMode]);
-  Serial.printf(" Router-WLAN : %s\n", routerSsid.isEmpty() ? "nicht eingerichtet" : routerSsid.c_str());
-  Serial.printf(" WLAN Bridge : \"%s\", %s\n", apSsid.c_str(), setupApPassword.isEmpty() ? (apOpenChosen ? "offen (bewusst)" : "KEIN Passwort") : "Passwort gesetzt");
-  Serial.printf(" Webinterface: %s\n", webPasswordSet() ? "Passwortschutz aktiv" : "ohne Passwort");
-  Serial.println(" Adresse     : siehe Display oder 'status' (Bridge/AP-Bridge: IP vom Router, sonst 192.168.4.1)");
+  con.println();
+  con.printf("\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90 %s %s \xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\n", PRODUCT_NAME, FIRMWARE_VERSION);
+  con.printf(" Betriebsart : %s\n", modes[bridgeMode]);
+  con.printf(" Router-WLAN : %s\n", routerSsid.isEmpty() ? "nicht eingerichtet" : routerSsid.c_str());
+  con.printf(" WLAN Bridge : \"%s\", %s\n", apSsid.c_str(), setupApPassword.isEmpty() ? (apOpenChosen ? "offen (bewusst)" : "KEIN Passwort") : "Passwort gesetzt");
+  con.printf(" Webinterface: %s\n", webPasswordSet() ? "Passwortschutz aktiv" : "ohne Passwort");
+  con.println(" Adresse     : siehe Display oder 'status' (Bridge/AP-Bridge: IP vom Router, sonst 192.168.4.1)");
   printConsoleHelp();
-  Serial.println();
+  con.println();
 }
 
 void runConsoleCommand(String line) {
@@ -4485,7 +4548,7 @@ void runConsoleCommand(String line) {
   const String raw = line;  // Gross-/Kleinschreibung fuer Namen und Passwoerter erhalten
   line.toLowerCase();
   if (line.isEmpty()) return;
-  Serial.printf("\n> %s\n", line.c_str());  // eingegebenen Befehl anzeigen
+  con.printf("\n> %s\n", line.c_str());  // eingegebenen Befehl anzeigen
   if (line == "status" || line == "s") {
     printSystemStatus();
   } else if (line == "tasks" || line == "t") {
@@ -4493,7 +4556,7 @@ void runConsoleCommand(String line) {
   } else if (line == "vmon on" || line == "vmon off") {
     vmonEnabled = line == "vmon on";
     preferences.putBool("vmon_on", vmonEnabled);
-    Serial.printf("Spannungsmessung an IO39 %s\n", vmonEnabled ? "eingeschaltet (Teiler 5V -> IO39, z. B. 2 x 10 kOhm)" : "ausgeschaltet");
+    con.printf("Spannungsmessung an IO39 %s\n", vmonEnabled ? "eingeschaltet (Teiler 5V -> IO39, z. B. 2 x 10 kOhm)" : "ausgeschaltet");
   } else if (line.startsWith("vmon cal ")) {
     const float actual = atof(line.substring(9).c_str());
     const bool wasOn = vmonEnabled;
@@ -4501,11 +4564,11 @@ void runConsoleCommand(String line) {
     const float measured = supplyVoltage();
     vmonEnabled = wasOn;
     if (actual < 1.0f || measured <= 0.1f) {
-      Serial.println("Kalibrierung nicht moeglich: z. B. 'vmon cal 5.02' mit der per Multimeter gemessenen Spannung eingeben.");
+      con.println("Kalibrierung nicht moeglich: z. B. 'vmon cal 5.02' mit der per Multimeter gemessenen Spannung eingeben.");
     } else {
       vmonRatio = vmonRatio * actual / measured;
       preferences.putFloat("vmon_ratio", vmonRatio);
-      Serial.printf("Kalibriert: Teilerfaktor %.3f (gemessen %.2f V -> %.2f V)\n", vmonRatio, measured, actual);
+      con.printf("Kalibriert: Teilerfaktor %.3f (gemessen %.2f V -> %.2f V)\n", vmonRatio, measured, actual);
     }
   } else if (line == "diag off" || line == "diag on" || line.startsWith("diag ")) {
     long seconds = line == "diag off" ? 0 : line == "diag on" ? 10 : line.substring(5).toInt();
@@ -4513,8 +4576,8 @@ void runConsoleCommand(String line) {
     if (seconds > 3600) seconds = 3600;
     diagIntervalMs = static_cast<uint32_t>(seconds) * 1000;
     preferences.putUShort("diag_s", static_cast<uint16_t>(seconds));
-    if (seconds) Serial.printf("Statuszeile alle %ld s\n", seconds);
-    else Serial.println("Statuszeile ausgeschaltet ('diag on' schaltet sie wieder ein)");
+    if (seconds) con.printf("Statuszeile alle %ld s\n", seconds);
+    else con.println("Statuszeile ausgeschaltet ('diag on' schaltet sie wieder ein)");
   } else if (line == "help" || line == "?") {
     printConsoleHelp();
   } else if (line == "ap" || line.startsWith("ap ")) {
@@ -4522,38 +4585,38 @@ void runConsoleCommand(String line) {
     rest.trim();
     String error;
     if (rest.isEmpty()) {
-      Serial.printf("WLAN der Bridge: \"%s\", %s\n", apSsid.c_str(), setupApPassword.isEmpty() ? (apOpenChosen ? "offen (bewusst)" : "KEIN Passwort") : "Passwort gesetzt");
-      Serial.println("Setzen mit: ap <name> <passwort>  oder  ap open");
+      con.printf("WLAN der Bridge: \"%s\", %s\n", apSsid.c_str(), setupApPassword.isEmpty() ? (apOpenChosen ? "offen (bewusst)" : "KEIN Passwort") : "Passwort gesetzt");
+      con.println("Setzen mit: ap <name> <passwort>  oder  ap open");
     } else if (rest.equalsIgnoreCase("open")) {
-      if (applyApCredentials(apSsid, "", "", error, true)) Serial.println("Wirksam nach Neustart ('reboot' oder 'mode ...').");
+      if (applyApCredentials(apSsid, "", "", error, true)) con.println("Wirksam nach Neustart ('reboot' oder 'mode ...').");
     } else {
       const int space = rest.indexOf(' ');
       const String name = space < 0 ? rest : rest.substring(0, space);
       String pass = space < 0 ? String() : rest.substring(space + 1);
       pass.trim();
       if (pass.isEmpty()) {
-        Serial.println("Passwort fehlt: ap <name> <passwort>  (8-63 Zeichen, ohne Leerzeichen)");
+        con.println("Passwort fehlt: ap <name> <passwort>  (8-63 Zeichen, ohne Leerzeichen)");
       } else if (applyApCredentials(name, pass, pass, error, false)) {
-        Serial.println("Wirksam nach Neustart ('reboot' oder 'mode ...').");
+        con.println("Wirksam nach Neustart ('reboot' oder 'mode ...').");
       }
     }
     if (!error.isEmpty()) {
       error.replace("&uuml;", "ue"); error.replace("&auml;", "ae"); error.replace("&ouml;", "oe");
-      Serial.printf("Fehler: %s\n", error.c_str());
+      con.printf("Fehler: %s\n", error.c_str());
     }
   } else if (line == "wifi" || line.startsWith("wifi ")) {
     String rest = raw.length() > 5 ? raw.substring(5) : String();
     rest.trim();
     if (rest.isEmpty()) {
-      Serial.printf("Router-WLAN: %s, %s\n", routerSsid.isEmpty() ? "nicht eingerichtet" : routerSsid.c_str(), wifiConnected ? "verbunden" : "nicht verbunden");
-      Serial.println("Setzen mit: wifi <name> <passwort>");
+      con.printf("Router-WLAN: %s, %s\n", routerSsid.isEmpty() ? "nicht eingerichtet" : routerSsid.c_str(), wifiConnected ? "verbunden" : "nicht verbunden");
+      con.println("Setzen mit: wifi <name> <passwort>");
     } else {
       const int space = rest.indexOf(' ');
       const String name = space < 0 ? rest : rest.substring(0, space);
       String pass = space < 0 ? String() : rest.substring(space + 1);
       pass.trim();
       if (!isValidSsid(name)) {
-        Serial.println("Fehler: Der WLAN-Name muss 1 bis 32 Zeichen lang sein (ASCII, ohne Leerzeichen).");
+        con.println("Fehler: Der WLAN-Name muss 1 bis 32 Zeichen lang sein (ASCII, ohne Leerzeichen).");
       } else {
         if (name != routerSsid) {
           routerChannel = 0;
@@ -4566,7 +4629,7 @@ void runConsoleCommand(String line) {
           routerPassword = pass;
           preferences.putString("password", routerPassword);
         }
-        Serial.printf("Router-WLAN \"%s\" gespeichert, verbinde ...\n", routerSsid.c_str());
+        con.printf("Router-WLAN \"%s\" gespeichert, verbinde ...\n", routerSsid.c_str());
         connectToRouter();
       }
     }
@@ -4578,25 +4641,25 @@ void runConsoleCommand(String line) {
     else if (value == "apnat") newMode = MODE_AP_NAT;
     else if (value == "apbridge") newMode = MODE_AP_BRIDGE;
     else if (!value.isEmpty()) {
-      Serial.println("Unbekannte Betriebsart. Erlaubt: nat | bridge | apnat | apbridge");
+      con.println("Unbekannte Betriebsart. Erlaubt: nat | bridge | apnat | apbridge");
       return;
     }
     if (value.isEmpty()) {
-      Serial.printf("Betriebsart: %s (aendern mit 'mode nat|bridge|apnat|apbridge')\n", modeKey().c_str());
+      con.printf("Betriebsart: %s (aendern mit 'mode nat|bridge|apnat|apbridge')\n", modeKey().c_str());
     } else if ((newMode == MODE_AP_NAT || newMode == MODE_AP_BRIDGE) && setupApPassword.isEmpty() && !apOpenChosen) {
-      Serial.println("Access-Point-Betriebsarten brauchen ein WLAN-Passwort: zuerst setzen mit  ap <name> <passwort>  (oder  ap open).");
+      con.println("Access-Point-Betriebsarten brauchen ein WLAN-Passwort: zuerst setzen mit  ap <name> <passwort>  (oder  ap open).");
     } else if (newMode == bridgeMode) {
-      Serial.printf("Betriebsart ist bereits %s\n", modeKey().c_str());
+      con.printf("Betriebsart ist bereits %s\n", modeKey().c_str());
     } else {
       preferences.putUChar("mode", newMode);
-      Serial.printf("Betriebsart %s gespeichert. Neustart ...\n", value.c_str());
+      con.printf("Betriebsart %s gespeichert. Neustart ...\n", value.c_str());
       restartAtMs = millis() + 200;
     }
   } else if (line == "reboot") {
-    Serial.println("Neustart ...");
+    con.println("Neustart ...");
     restartAtMs = millis() + 200;
   } else {
-    Serial.println("Unbekannter Befehl.");
+    con.println("Unbekannter Befehl.");
     printConsoleHelp();
   }
 }
@@ -4843,6 +4906,15 @@ void apiRestart() {
   webServer.send(200, "application/json", "{\"restart\":true}");
 }
 
+// Web-Konsole: fuehrt einen Konsolenbefehl aus und liefert die Ausgabe als Text
+void apiConsole() {
+  String out;
+  con.capture = &out;
+  runConsoleCommand(webServer.arg("cmd"));
+  con.capture = nullptr;
+  webServer.send(200, "text/plain; charset=utf-8", out);
+}
+
 // mDNS-Dienst "_netbridge._tcp": damit findet Home Assistant das Geraet selbst
 void mdnsLoop() {
   static bool started = false;
@@ -5081,6 +5153,7 @@ void setup() {
   webServer.on("/api/state", HTTP_GET, guarded<apiState>);
   webServer.on("/api/display", HTTP_POST, guarded<apiDisplay>);
   webServer.on("/api/restart", HTTP_POST, guarded<apiRestart>);
+  webServer.on("/api/console", HTTP_POST, guarded<apiConsole>);
   webServer.on("/api/kick", HTTP_POST, guarded<apiKick>);
   webServer.on("/api/block", HTTP_POST, guarded<apiBlock>);
   webServer.on("/brightness", HTTP_POST, guarded<setDisplayBrightness>);

@@ -13,6 +13,16 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.30.0] – 2026-11-26
+
+### Added
+- **Web console.** New "Console" section in the web interface: the same commands as the serial console (`help`, `status`,
+  `mode`, `ap`, `wifi`, `tasks`, `reboot` …), with output and command history (arrow keys). Protected by the web login.
+
+### Changed
+- **Mode selection: router WiFi right where you pick NAT or Bridge.** Choosing "NAT" or "Bridge" now shows the router WiFi
+  (network search, name, password) directly in the mode form and saves it together with the mode. The WiFi name is required.
+
 ## [3.29.2] – 2026-11-26
 
 ### Changed
