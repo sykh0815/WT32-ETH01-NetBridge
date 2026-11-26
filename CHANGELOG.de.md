@@ -14,6 +14,18 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.29.0] – 26.11.2026
+
+### Neu
+- **Serielle Konsole: WLAN über die Konsole einstellen.** `ap <Name> <Passwort>` / `ap open` setzt das eigene WLAN der Bridge
+  (nötig für die Access-Point-Betriebsarten), `wifi <Name> <Passwort>` setzt das Router-WLAN und verbindet. Ohne Angaben
+  zeigen beide den aktuellen Stand. Ein Passwort muss damit nicht mehr zuerst im Webinterface gesetzt werden.
+- **Serielle Konsole: Befehl `help`** und eine **Startseite direkt nach dem Hochfahren** (Version, Betriebsart, WLAN, Webinterface, alle Befehle).
+- **Die Konsole zeigt die getippten Zeichen an** (Echo, Rücktaste funktioniert).
+
+### Geändert
+- Die ständige Statuszeile `Diag:` ist standardmäßig aus (`diag on` schaltet sie wieder ein).
+
 ## [3.28.0] – 26.11.2026
 
 ### Neu

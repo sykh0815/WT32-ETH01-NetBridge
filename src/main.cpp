@@ -139,7 +139,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.28.0";
+constexpr char FIRMWARE_VERSION[] = "3.29.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1464,7 +1464,7 @@ const char *const JS_TEXT_EN = "var L={notConnected:'Not connected to the router
   "connFor:'connected for',leaseShort:'lease left',leaseLeft:'Lease remaining',expired:'expired',webPwShort:'The password must be at least 8 characters long.',fwMax:'At most 32 rules.',noCableShort:'no cable',notConnShort:'not connected',devices:' devices',oneDevice:'1 device',rate:'Data rate',peak:'Peak',total:'Data since start',last2:'last 2 minutes',now:'now',noNeighbors:'No devices detected yet.',router:'Router',seenCol:'Last seen',justNow:'just now',agoA:'',agoB:' ago',dec:'.'};";
 
 // Alle 10 s eine Diagnosezeile im seriellen Log (hilft bei Verbindungsproblemen)
-uint32_t diagIntervalMs = 10000;  // Statuszeile: Abstand (0 = aus), Befehl "diag"
+uint32_t diagIntervalMs = 0;  // Statuszeile: Abstand (0 = aus), Befehl "diag"
 bool consoleTyping = false;       // gerade wird ein Befehl eingetippt: keine Statuszeile dazwischen
 
 void logDiagnostics() {
@@ -4429,7 +4429,7 @@ void printSystemStatus() {
   const String ip = isApMode() ? displayUplinkIp() : (wifiConnected && bridgeMode == MODE_NAT ? WiFi.localIP().toString() : String("192.168.4.1 (Setup-WLAN)"));
   printRow("Webinterface", ip.isEmpty() ? String("wartet auf IP") : String("http://") + ip);
   printRow("Display", gfx == nullptr ? String("keins") : gfx->isColor() ? String("TFT ST7735 ") + String(gfx->width()) + "x" + String(gfx->height()) : String("OLED 128x64"));
-  Serial.println(" Befehle: status, tasks, vmon on|off|cal <Volt>, diag on|off|<Sekunden>, reboot, help");
+  Serial.println(" Befehle: help (zeigt alle), status, tasks, mode, ap, wifi, vmon, diag, reboot");
   Serial.println();
 }
 
@@ -4446,8 +4446,38 @@ void printTasks() {
   Serial.println();
 }
 
+// Befehlsuebersicht der Konsole
+void printConsoleHelp() {
+  Serial.println(" Befehle (Eingabe mit Enter, 115200 Baud):");
+  Serial.println("   help                     diese Uebersicht");
+  Serial.println("   status (s)               kompletter Systemstatus");
+  Serial.println("   tasks (t)                Tasks mit CPU-Anteil und Stack");
+  Serial.println("   mode [nat|bridge|apnat|apbridge]   Betriebsart anzeigen/aendern (mit Neustart)");
+  Serial.println("   ap <name> <passwort>     WLAN der Bridge setzen (Passwort 8-63 Zeichen, ohne Leerzeichen)");
+  Serial.println("   ap open                  WLAN der Bridge bewusst offen lassen | 'ap' zeigt den Stand");
+  Serial.println("   wifi <name> <passwort>   Router-WLAN setzen und verbinden | 'wifi' zeigt den Stand");
+  Serial.println("   vmon on|off|cal <Volt>   Spannungsmessung an IO39");
+  Serial.println("   diag on|off|<Sekunden>   Statuszeile (standardmaessig aus)");
+  Serial.println("   reboot                   Neustart");
+}
+
+// Kurze Startseite direkt nach dem Hochfahren (der komplette Systemstatus folgt nach 15 s)
+void printStartInfo() {
+  static const char *const modes[] = {"NAT", "Bridge", "Access Point (NAT)", "Access Point (Bridge)"};
+  Serial.println();
+  Serial.printf("\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90 %s %s \xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\n", PRODUCT_NAME, FIRMWARE_VERSION);
+  Serial.printf(" Betriebsart : %s\n", modes[bridgeMode]);
+  Serial.printf(" Router-WLAN : %s\n", routerSsid.isEmpty() ? "nicht eingerichtet" : routerSsid.c_str());
+  Serial.printf(" WLAN Bridge : \"%s\", %s\n", apSsid.c_str(), setupApPassword.isEmpty() ? (apOpenChosen ? "offen (bewusst)" : "KEIN Passwort") : "Passwort gesetzt");
+  Serial.printf(" Webinterface: %s\n", webPasswordSet() ? "Passwortschutz aktiv" : "ohne Passwort");
+  Serial.println(" Adresse     : siehe Display oder 'status' (Bridge/AP-Bridge: IP vom Router, sonst 192.168.4.1)");
+  printConsoleHelp();
+  Serial.println();
+}
+
 void runConsoleCommand(String line) {
   line.trim();
+  const String raw = line;  // Gross-/Kleinschreibung fuer Namen und Passwoerter erhalten
   line.toLowerCase();
   if (line.isEmpty()) return;
   Serial.printf("\n> %s\n", line.c_str());  // eingegebenen Befehl anzeigen
@@ -4480,6 +4510,61 @@ void runConsoleCommand(String line) {
     preferences.putUShort("diag_s", static_cast<uint16_t>(seconds));
     if (seconds) Serial.printf("Statuszeile alle %ld s\n", seconds);
     else Serial.println("Statuszeile ausgeschaltet ('diag on' schaltet sie wieder ein)");
+  } else if (line == "help" || line == "?") {
+    printConsoleHelp();
+  } else if (line == "ap" || line.startsWith("ap ")) {
+    String rest = raw.length() > 3 ? raw.substring(3) : String();
+    rest.trim();
+    String error;
+    if (rest.isEmpty()) {
+      Serial.printf("WLAN der Bridge: \"%s\", %s\n", apSsid.c_str(), setupApPassword.isEmpty() ? (apOpenChosen ? "offen (bewusst)" : "KEIN Passwort") : "Passwort gesetzt");
+      Serial.println("Setzen mit: ap <name> <passwort>  oder  ap open");
+    } else if (rest.equalsIgnoreCase("open")) {
+      if (applyApCredentials(apSsid, "", "", error, true)) Serial.println("Wirksam nach Neustart ('reboot' oder 'mode ...').");
+    } else {
+      const int space = rest.indexOf(' ');
+      const String name = space < 0 ? rest : rest.substring(0, space);
+      String pass = space < 0 ? String() : rest.substring(space + 1);
+      pass.trim();
+      if (pass.isEmpty()) {
+        Serial.println("Passwort fehlt: ap <name> <passwort>  (8-63 Zeichen, ohne Leerzeichen)");
+      } else if (applyApCredentials(name, pass, pass, error, false)) {
+        Serial.println("Wirksam nach Neustart ('reboot' oder 'mode ...').");
+      }
+    }
+    if (!error.isEmpty()) {
+      error.replace("&uuml;", "ue"); error.replace("&auml;", "ae"); error.replace("&ouml;", "oe");
+      Serial.printf("Fehler: %s\n", error.c_str());
+    }
+  } else if (line == "wifi" || line.startsWith("wifi ")) {
+    String rest = raw.length() > 5 ? raw.substring(5) : String();
+    rest.trim();
+    if (rest.isEmpty()) {
+      Serial.printf("Router-WLAN: %s, %s\n", routerSsid.isEmpty() ? "nicht eingerichtet" : routerSsid.c_str(), wifiConnected ? "verbunden" : "nicht verbunden");
+      Serial.println("Setzen mit: wifi <name> <passwort>");
+    } else {
+      const int space = rest.indexOf(' ');
+      const String name = space < 0 ? rest : rest.substring(0, space);
+      String pass = space < 0 ? String() : rest.substring(space + 1);
+      pass.trim();
+      if (!isValidSsid(name)) {
+        Serial.println("Fehler: Der WLAN-Name muss 1 bis 32 Zeichen lang sein (ASCII, ohne Leerzeichen).");
+      } else {
+        if (name != routerSsid) {
+          routerChannel = 0;
+          preferences.putUChar("r_chan", 0);
+        }
+        resetReconnect();
+        routerSsid = name;
+        preferences.putString("ssid", routerSsid);
+        if (!pass.isEmpty()) {
+          routerPassword = pass;
+          preferences.putString("password", routerPassword);
+        }
+        Serial.printf("Router-WLAN \"%s\" gespeichert, verbinde ...\n", routerSsid.c_str());
+        connectToRouter();
+      }
+    }
   } else if (line == "mode" || line.startsWith("mode ")) {
     const String value = line.length() > 5 ? line.substring(5) : String();
     BridgeMode newMode = bridgeMode;
@@ -4494,7 +4579,7 @@ void runConsoleCommand(String line) {
     if (value.isEmpty()) {
       Serial.printf("Betriebsart: %s (aendern mit 'mode nat|bridge|apnat|apbridge')\n", modeKey().c_str());
     } else if ((newMode == MODE_AP_NAT || newMode == MODE_AP_BRIDGE) && setupApPassword.isEmpty() && !apOpenChosen) {
-      Serial.println("Access-Point-Betriebsarten brauchen ein WLAN-Passwort: bitte zuerst im Webinterface festlegen.");
+      Serial.println("Access-Point-Betriebsarten brauchen ein WLAN-Passwort: zuerst setzen mit  ap <name> <passwort>  (oder  ap open).");
     } else if (newMode == bridgeMode) {
       Serial.printf("Betriebsart ist bereits %s\n", modeKey().c_str());
     } else {
@@ -4506,9 +4591,8 @@ void runConsoleCommand(String line) {
     Serial.println("Neustart ...");
     restartAtMs = millis() + 200;
   } else {
-    Serial.println("Befehle: status (s)  Systemstatus | tasks (t)  Tasks mit CPU-Anteil und Stack | vmon on|off  Spannungsmessung an IO39 |");
-    Serial.println("         vmon cal 5.02  mit gemessener Spannung kalibrieren | diag on|off|<Sekunden>  Statuszeile |");
-    Serial.println("         mode [nat|bridge|apnat|apbridge]  Betriebsart anzeigen/aendern (mit Neustart) | reboot  Neustart");
+    Serial.println("Unbekannter Befehl.");
+    printConsoleHelp();
   }
 }
 
@@ -4516,7 +4600,7 @@ void runConsoleCommand(String line) {
 // Der erkannte Befehl wird als eigene Zeile "> befehl" ausgegeben - das ist in jedem Monitor sichtbar
 // (auch mit zeilenweise puffernden Filtern). Kommt kein Zeilenende, wird der Befehl nach 2 s ausgefuehrt.
 void handleConsole() {
-  static char line[48];
+  static char line[112];
   static size_t length = 0;
   static uint32_t lastCharMs = 0;
   while (Serial.available() > 0) {
@@ -4524,14 +4608,17 @@ void handleConsole() {
     lastCharMs = millis();
     if (c == '\r' || c == '\n') {
       if (length > 0) {
+        Serial.println();
         line[length] = 0;
         length = 0;
         runConsoleCommand(String(line));
       }
     } else if ((c == 8 || c == 127) && length > 0) {  // Ruecktaste
       --length;
+      Serial.print("\b \b");
     } else if (c >= 32 && c < 127 && length < sizeof(line) - 1) {
       line[length++] = c;
+      Serial.write(c);  // Echo der Eingabe
     }
   }
   if (length > 0 && millis() - lastCharMs > 2000) {  // Monitor sendet kein Zeilenende
@@ -4889,8 +4976,7 @@ void setup() {
   vmonBegin();
   mqttLoad();
   blockLoad();
-  diagIntervalMs = static_cast<uint32_t>(preferences.getUShort("diag_s", 10)) * 1000;
-  Serial.println("Konsole: 'help' + Enter zeigt die Befehle (z. B. 'status')");
+  diagIntervalMs = static_cast<uint32_t>(preferences.getUShort("diag_s", 0)) * 1000;
   if (esp_reset_reason() == ESP_RST_BROWNOUT) Serial.println("ACHTUNG: Letzter Neustart durch Unterspannung (Brownout) - Netzteil und Kabel pruefen!");
   displayBegin();
   timeBegin();
@@ -4913,6 +4999,7 @@ void setup() {
   bridgeMode = storedMode <= MODE_AP_BRIDGE ? static_cast<BridgeMode>(storedMode) : MODE_NAT;
   apOpenChosen = setupApPassword.isEmpty() && preferences.getBool("ap_openok", false);
   if (isApMode() && setupApPassword.isEmpty() && !apOpenChosen) bridgeMode = MODE_NAT;  // kein ungewollt offener Access Point
+  printStartInfo();
   const char *modeNames[] = {"NAT", "Bridge", "Access Point (NAT)", "Access Point (Bridge)"};
   Serial.printf("%s, Firmware %s\n", PRODUCT_NAME, FIRMWARE_VERSION);
   Serial.printf("Betriebsart: %s\n", modeNames[bridgeMode]);

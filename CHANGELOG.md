@@ -13,6 +13,18 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.29.0] – 2026-11-26
+
+### Added
+- **Serial console: set the WiFi from the console.** `ap <name> <password>` / `ap open` sets the bridge's own WiFi (needed for
+  the access point modes), `wifi <name> <password>` sets and connects the router WiFi. Without arguments both show the
+  current state. A password is therefore no longer required to be set in the web interface first.
+- **Serial console: `help` command** and a **start page right after boot** (version, mode, WiFi, web interface, all commands).
+- **Serial console echoes typed characters** (backspace works).
+
+### Changed
+- The periodic `Diag:` status line is off by default (`diag on` switches it on again).
+
 ## [3.28.0] – 2026-11-26
 
 ### Added
