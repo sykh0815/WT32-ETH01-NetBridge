@@ -139,7 +139,7 @@ String pill(const char *cls, const char *text) { return String("<span class='pil
 
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.29.0";
+constexpr char FIRMWARE_VERSION[] = "3.29.1";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
@@ -1143,7 +1143,7 @@ String languageSwitchHtml() {
 
 // Neues Erscheinungsbild (Seitenleiste am PC, Tab-Leiste am Handy, hell/dunkel automatisch). Wird nach dem alten CSS eingefuegt und ueberschreibt es.
 const char NEW_CSS[] = R"CSS(
-:root{color-scheme:light dark;--bg:#edf0ef;--sf:#fff;--ink:#16202a;--mute:#566371;--line:#d3dadf;--cable:#1f6feb;--cink:#fff;--soft:#e5eefc;--ok:#12895a;--warn:#b97a06;--bad:#c4332a;--off:#8b97a2;--okbg:#dff3e9;--warnbg:#fbefd5;--badbg:#fbe3e0;--side:#14202b;--sink:#c6d1da;--smute:#7f909e;--sline:#243443}
+:root{color-scheme:light dark;--bg:#e8ecf0;--sf:#fff;--ink:#16202a;--mute:#566371;--line:#d3dadf;--cable:#1f6feb;--cink:#fff;--soft:#e5eefc;--ok:#12895a;--warn:#b97a06;--bad:#c4332a;--off:#8b97a2;--okbg:#dff3e9;--warnbg:#fbefd5;--badbg:#fbe3e0;--side:#14202b;--sink:#c6d1da;--smute:#7f909e;--sline:#243443}
 @media(prefers-color-scheme:dark){:root{--bg:#0d141b;--sf:#16212b;--ink:#e6ecf1;--mute:#93a3b0;--line:#27343f;--cable:#5b9bff;--cink:#07131f;--soft:#182b45;--ok:#3cc48a;--warn:#e3a93a;--bad:#ff6b5f;--off:#5d6b77;--okbg:#12352a;--warnbg:#3a2d0f;--badbg:#3d1b18;--side:#091017;--sink:#c6d1da;--smute:#74858f;--sline:#1c2a37}}
 body{font-family:"Avenir Next","Segoe UI",system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
 :focus-visible{outline:3px solid var(--cable);outline-offset:2px}
@@ -1188,13 +1188,13 @@ details.sec.cur>summary{pointer-events:none;font-size:18px;border-bottom:1px sol
 details.sec.cur .chev{display:none}
 details.sec.cur{margin-top:0}
 /* Kopf */
-.hero{border-radius:16px;padding:24px 22px 18px;color:#fff;background:#0f5592}
-.hero.m-nat{background:linear-gradient(120deg,#0f5592,#1d82d6)}.hero.m-bridge{background:linear-gradient(120deg,#06683a,#14a35d)}.hero.m-apnat{background:linear-gradient(120deg,#5b318f,#8c5fd0)}.hero.m-apbridge{background:linear-gradient(120deg,#b04f08,#e8892c)}
+.hero{padding:24px 22px 18px;color:#fff;background:var(--side);border:1px solid var(--sline);border-top:4px solid var(--mc);--mc:#1d82d6}
+.hero.m-nat{--mc:#1d82d6}.hero.m-bridge{--mc:#1fae6b}.hero.m-apnat{--mc:#9a6fe0}.hero.m-apbridge{--mc:#ee8e2f}
 .hero .hd{margin:0}.hero h1{color:#fff;font-size:28px}.hero .sub{color:#ffffffcc}.hero .board{width:140px}
-.hmode{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid #ffffff40;color:#fff;text-decoration:none}
-.hmode .mi{flex:none;display:flex;width:40px;height:40px;align-items:center;justify-content:center;border-radius:10px;background:#ffffff2b}.hmode .mi svg{width:26px;height:26px;color:#fff}
+.hmode{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--sline);color:#fff;text-decoration:none}
+.hmode .mi{flex:none;display:flex;width:40px;height:40px;align-items:center;justify-content:center;background:var(--mc)}.hmode .mi svg{width:26px;height:26px;color:#fff}
 .hmode .mt{flex:1;min-width:0}.hmode b{display:block;font-size:17px}.hmode em{display:block;font-style:normal;font-size:13px;opacity:.9;overflow-wrap:anywhere}
-.hmode .mc{flex:none;font-size:13px;font-weight:700;padding:5px 11px;border-radius:99px;background:#ffffff2b}
+.hmode .mc{flex:none;font-size:13px;font-weight:700;padding:5px 11px;border:1px solid var(--sline);color:var(--sink)}
 .tiles{gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:14px 0 10px}
 .tile{border:0;border-radius:0}
 /* Navigation */
@@ -1233,6 +1233,10 @@ details.sec.cur{margin-top:0}
   #moreToggle:checked~.more{display:block}
   #moreToggle:checked~.tabs label{color:#fff;background:#ffffff17}
 }
+*{border-radius:0!important}
+.pd,.tile .dot,input[type=radio]{border-radius:50%!important}
+input.tg::after{border-radius:0}
+.leg .sw.dn{background:var(--cable)}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 )CSS";
 

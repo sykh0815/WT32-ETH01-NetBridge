@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.29.1] – 26.11.2026
+
+### Geändert
+- **Webinterface: eckige Formen und ruhigeres Farbkonzept.** Alle Kästen, Schaltflächen, Marken und Schalter haben spitze Ecken
+  (nur Status-Punkte bleiben rund). Der Statuskopf ist jetzt wie die Seitenleiste dunkel; die Betriebsart zeigt eine Akzentfarbe.
+
 ## [3.29.0] – 26.11.2026
 
 ### Neu

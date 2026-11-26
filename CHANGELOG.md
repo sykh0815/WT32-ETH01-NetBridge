@@ -13,6 +13,12 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.29.1] – 2026-11-26
+
+### Changed
+- **Web interface: sharp corners and a calmer colour scheme.** All boxes, buttons, tags and switches have square corners
+  (only status dots stay round). The status header is now dark like the sidebar; the operating mode is shown by an accent colour.
+
 ## [3.29.0] – 2026-11-26
 
 ### Added
