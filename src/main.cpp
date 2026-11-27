@@ -153,7 +153,7 @@ constexpr int W5500_MISO_PIN = 12;
 constexpr int W5500_CS_PIN = 14;
 constexpr int W5500_INT_PIN = 10;
 constexpr int W5500_RST_PIN = 9;
-constexpr int W5500_SPI_MHZ = 36;
+constexpr int W5500_SPI_MHZ = 40;
 constexpr char PRODUCT_NAME[] = "ESP32-S3-ETH NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "esp32-s3-eth-netbridge";
 constexpr char SETUP_AP_SSID[] = "ESP32-S3-ETH-NetBridge-Setup";
@@ -165,7 +165,7 @@ constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
 #endif
-constexpr char FIRMWARE_VERSION[] = "3.31.1";
+constexpr char FIRMWARE_VERSION[] = "3.31.2";
 // Fruehere Standardnamen des Einrichtungs-WLANs: gespeichert = nie selbst geaendert -> neuer Standardname
 const char *const OLD_SETUP_AP_SSIDS[] = {"WT32-NetBridge-Setup", "WT32-Bridge-Setup"};
 // Standard-Passwort des Einrichtungs-WLANs. Leer = offenes WLAN beim ersten Start; das Webinterface
@@ -1524,9 +1524,11 @@ void logDiagnostics() {
   if (lanTxFails > 0) snprintf(txErr, sizeof(txErr), " | LAN-Sendefehler %u (zuletzt 0x%x)", static_cast<unsigned>(lanTxFails), lanTxLastError);
   char cpu[16] = "?";
   if (cpuLoad[0] >= 0) snprintf(cpu, sizeof(cpu), "%d/%d %%", static_cast<int>(cpuLoad[0] + 0.5f), static_cast<int>(cpuLoad[1] + 0.5f));
-  Serial.printf("Diag: %lus | %s | Router: %s | WLAN-Geraete: %d | Kanal %u | CPU %s | Heap frei %u, min %u, Block %u%s%s\n",
+  char drops[56] = "";
+  if (framesDropped > 0) snprintf(drops, sizeof(drops), " | verworfen %u (Warteschlange %u)", static_cast<unsigned>(framesDropped), static_cast<unsigned>(dropsQueue));
+  Serial.printf("Diag: %lus | %s | Router: %s | WLAN-Geraete: %d | Kanal %u | CPU %s | Heap frei %u, min %u, Block %u%s%s%s\n",
                 static_cast<unsigned long>(millis() / 1000), modeNames[bridgeMode], router.c_str(), WiFi.softAPgetStationNum(), channel,
-                cpu, static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()), extra, txErr);
+                cpu, static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMinFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()), extra, txErr, drops);
 }
 
 // Captive Portal: Anfragen von Geraeten im Einrichtungs-WLAN an fremde Adressen (z. B. die

@@ -13,6 +13,13 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.31.2] – 2026-11-27
+
+### Changed
+- **Diag line shows dropped frames** (total and due to a full queue). On the ESP32-S3-ETH the W5500 SPI clock is now 40 MHz.
+  Measurements on the S3 board: about 7 Mbit/s with both CPU cores at 50–80 %; the queue does not overflow, the W5500 driver
+  (CPU per packet) is the limit.
+
 ## [3.31.1] – 2026-11-27
 
 ### Fixed

@@ -14,6 +14,13 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.31.2] – 27.11.2026
+
+### Geändert
+- **Diag-Zeile zeigt verworfene Frames** (gesamt und wegen voller Warteschlange). Beim ESP32-S3-ETH läuft der SPI-Takt des W5500
+  jetzt mit 40 MHz. Messung auf dem S3-Board: etwa 7 Mbit/s bei 50–80 % Last auf beiden Kernen; die Warteschlange läuft nicht
+  über, der W5500-Treiber (CPU je Paket) ist die Grenze.
+
 ## [3.31.1] – 27.11.2026
 
 ### Behoben
