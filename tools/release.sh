@@ -14,7 +14,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ENV_NAME="wt32-eth01"
 VERSION=$(sed -n 's/.*FIRMWARE_VERSION\[\] = "\([^"]*\)".*/\1/p' src/main.cpp)
 [ -n "$VERSION" ] || { echo "FIRMWARE_VERSION nicht gefunden / not found in src/main.cpp"; exit 1; }
 TAG="v$VERSION"
@@ -36,32 +35,34 @@ if gh release view "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Build"
-pio run -e "$ENV_NAME"
-BUILD=".pio/build/$ENV_NAME"
 BOOT_APP0=$(find "$HOME/.platformio/packages" -path "*framework-arduinoespressif32*" -name boot_app0.bin 2>/dev/null | head -n 1)
 [ -n "$BOOT_APP0" ] || { echo "boot_app0.bin nicht gefunden / not found"; exit 1; }
-
 DIST="dist/$TAG"
 rm -rf "$DIST"; mkdir -p "$DIST"
-cp "$BUILD/bootloader.bin" "$BUILD/partitions.bin" "$BUILD/firmware.bin" "$BOOT_APP0" "$DIST/"
-ASSETS=("$DIST/bootloader.bin" "$DIST/partitions.bin" "$DIST/boot_app0.bin" "$DIST/firmware.bin")
+ASSETS=()
 
-# Komplett-Datei (alles ab Adresse 0x0) fuer Web-Flasher / single file at 0x0 for web flashers
-FULL="$DIST/wt32-eth01-netbridge-$TAG-full.bin"
-MERGE_ARGS=(--chip esp32 merge_bin -o "$FULL" --flash_mode keep --flash_freq keep --flash_size keep
-            0x1000 "$DIST/bootloader.bin" 0x8000 "$DIST/partitions.bin" 0xe000 "$DIST/boot_app0.bin" 0x10000 "$DIST/firmware.bin")
-if pio pkg exec -p tool-esptoolpy -- esptool.py "${MERGE_ARGS[@]}" >/dev/null 2>&1 \
-   || python3 -m esptool "${MERGE_ARGS[@]}" >/dev/null 2>&1 \
-   || esptool "${MERGE_ARGS[@]}" >/dev/null 2>&1; then
-  ASSETS+=("$FULL")
-  echo "==> Komplett-Datei / full image: $FULL"
-elif [ -f "$BUILD/firmware.factory.bin" ] && cp "$BUILD/firmware.factory.bin" "$FULL"; then
-  ASSETS+=("$FULL")
-  echo "==> Komplett-Datei (PlatformIO factory) / full image (PlatformIO factory): $FULL"
-else
-  echo "==> Hinweis: esptool nicht gefunden, Komplett-Datei wird uebersprungen / esptool not found, skipping full image"
-fi
+# Pro Board: Umgebung:Chip:Bootloader-Adresse:Dateipraefix / per board: env:chip:bootloader address:file prefix
+for B in "wt32-eth01:esp32:0x1000:wt32-eth01" "esp32-s3-eth:esp32s3:0x0:esp32-s3-eth"; do
+  IFS=: read -r ENV_NAME CHIP BOOT_ADDR PREFIX <<<"$B"
+  echo "==> Build $ENV_NAME"
+  pio run -e "$ENV_NAME"
+  BUILD=".pio/build/$ENV_NAME"
+  for f in bootloader partitions firmware; do cp "$BUILD/$f.bin" "$DIST/$PREFIX-$f.bin"; ASSETS+=("$DIST/$PREFIX-$f.bin"); done
+  cp "$BOOT_APP0" "$DIST/$PREFIX-boot_app0.bin"; ASSETS+=("$DIST/$PREFIX-boot_app0.bin")
+  # Komplett-Datei (ab Adresse 0x0) fuer Web-Flasher / single file at 0x0 for web flashers
+  FULL="$DIST/$PREFIX-netbridge-$TAG-full.bin"
+  MERGE_ARGS=(--chip "$CHIP" merge_bin -o "$FULL" --flash_mode keep --flash_freq keep --flash_size keep
+              "$BOOT_ADDR" "$DIST/$PREFIX-bootloader.bin" 0x8000 "$DIST/$PREFIX-partitions.bin" 0xe000 "$DIST/$PREFIX-boot_app0.bin" 0x10000 "$DIST/$PREFIX-firmware.bin")
+  if pio pkg exec -p tool-esptoolpy -- esptool.py "${MERGE_ARGS[@]}" >/dev/null 2>&1 \
+     || python3 -m esptool "${MERGE_ARGS[@]}" >/dev/null 2>&1 \
+     || esptool "${MERGE_ARGS[@]}" >/dev/null 2>&1; then
+    ASSETS+=("$FULL"); echo "==> Komplett-Datei / full image: $FULL"
+  elif [ -f "$BUILD/firmware.factory.bin" ] && cp "$BUILD/firmware.factory.bin" "$FULL"; then
+    ASSETS+=("$FULL"); echo "==> Komplett-Datei (PlatformIO factory) / full image (PlatformIO factory): $FULL"
+  else
+    echo "==> Hinweis: Komplett-Datei fuer $ENV_NAME uebersprungen / full image for $ENV_NAME skipped"
+  fi
+done
 (cd "$DIST" && shasum -a 256 *.bin > SHA256SUMS.txt)
 ASSETS+=("$DIST/SHA256SUMS.txt")
 
@@ -91,11 +92,13 @@ NOTES="$DIST/RELEASE_NOTES.md"
 
 | File / Datei | Address / Adresse |
 |---|---|
-| `bootloader.bin` | `0x1000` |
-| `partitions.bin` | `0x8000` |
-| `boot_app0.bin` | `0xe000` |
-| `firmware.bin` | `0x10000` |
-| `wt32-eth01-netbridge-…-full.bin` (if present / falls vorhanden) | `0x0` |
+| `<board>-bootloader.bin` | `0x1000` (WT32-ETH01) / `0x0` (ESP32-S3-ETH) |
+| `<board>-partitions.bin` | `0x8000` |
+| `<board>-boot_app0.bin` | `0xe000` |
+| `<board>-firmware.bin` | `0x10000` |
+| `<board>-netbridge-…-full.bin` (if present / falls vorhanden) | `0x0` |
+
+`<board>` = `wt32-eth01` (WT32-ETH01) or / oder `esp32-s3-eth` (Waveshare ESP32-S3-ETH).
 
 Flash in the browser with / im Browser flashen mit <https://espressif.github.io/esptool-js/> (Chrome/Edge).
 Updating from an older version keeps all settings / Beim Update bleiben alle Einstellungen erhalten.
@@ -107,5 +110,5 @@ git tag -a "$TAG" -m "Version $VERSION" 2>/dev/null || echo "Tag $TAG existiert 
 git push origin "$TAG"
 
 echo "==> Release"
-gh release create "$TAG" --title "WT32-ETH01 NetBridge $VERSION" --notes-file "$NOTES" --latest "${ASSETS[@]}"
+gh release create "$TAG" --title "NetBridge $VERSION" --notes-file "$NOTES" --latest "${ASSETS[@]}"
 echo "==> Fertig / done: $(gh release view "$TAG" --json url -q .url)"

@@ -13,6 +13,15 @@ Version numbers follow the scheme **MAJOR.MINOR.PATCH**:
 The current version is defined in `src/main.cpp` (`FIRMWARE_VERSION`) and shown in the web
 interface and the serial output.
 
+## [3.31.0] – 2026-11-27
+
+### Added
+- **Second board: Waveshare ESP32-S3-ETH (experimental).** New PlatformIO environment `esp32-s3-eth` (W5500 over SPI instead of
+  the LAN8720; display, button and voltage-measurement pins adapted; serial console over USB). The WT32-ETH01 build is unchanged.
+  Choose the board when building (`pio run -e wt32-eth01` / `-e esp32-s3-eth`). Hardware tests on the S3 board are still pending.
+- **Releases for both boards.** `tools/release.sh` now builds both boards and attaches the files per board
+  (`wt32-eth01-…` and `esp32-s3-eth-…`). The README has a "Supported boards" table.
+
 ## [3.30.0] – 2026-11-26
 
 ### Added

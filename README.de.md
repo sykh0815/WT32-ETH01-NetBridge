@@ -2,13 +2,13 @@
 
 🇬🇧 [English](README.md) | 🇩🇪 **Deutsch**
 
-[![Version](https://img.shields.io/badge/Version-3.30.0-1263a6)](CHANGELOG.de.md)
+[![Version](https://img.shields.io/badge/Version-3.31.0-1263a6)](CHANGELOG.de.md)
 [![Plattform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#bauen-und-flashen)
 [![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 3.30.0** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
+**Version 3.31.0** – siehe [Änderungsprotokoll](CHANGELOG.de.md)
 
 **WT32-ETH01 NetBridge** ist eine Firmware für das **WT32-ETH01 v1.4** (ESP32 + LAN8720), die Ethernet und
 WLAN in beide Richtungen verbindet:
@@ -98,6 +98,17 @@ Alle Screenshots mit Beschreibung: **[Screenshot-Album](docs/SCREENSHOTS.de.md)*
 - **Serielle Konsole** mit Befehlen: Systemstatus mit **CPU-Last je Kern**, RAM, Firmware-Größe, Grund
   des letzten Starts (inkl. Brownout), optionale **Messung der 5-V-Versorgung**, Task-Liste
 - Einstellungen dauerhaft im Flash (NVS); keine externen Bibliotheken nötig
+
+## Unterstützte Boards
+
+Eine Firmware, zwei Boards – das passende wählst du beim Bauen (`pio run -e <Umgebung>`) oder lädst die passende Datei von den [Releases](https://github.com/sykh0815/WT32-ETH01-NetBridge/releases):
+
+| Board | Ethernet | PlatformIO-Umgebung | Release-Dateien | Stand |
+|---|---|---|---|---|
+| **WT32-ETH01** v1.4 (ESP32) | LAN8720 (RMII), 100 Mbit/s | `wt32-eth01` | `wt32-eth01-…` | getestet |
+| **Waveshare ESP32-S3-ETH** (optional PoE) | W5500 (SPI) | `esp32-s3-eth` | `esp32-s3-eth-…` | **neu, experimentell** – baut; Hardwaretests stehen aus, Datenrate voraussichtlich niedriger als beim WT32-ETH01 |
+
+Beim ESP32-S3-ETH liegen Display, Taster und Spannungsmessung auf anderen Pins (siehe `BOARD_WAVESHARE_S3_ETH` in `src/main.cpp`); die serielle Konsole läuft über den USB-Anschluss.
 
 ## Hardware
 
@@ -354,7 +365,7 @@ backup/main_nat_only.cpp  ältere Version nur mit NAT-Modus
 
 ## Versionen
 
-Aktuelle Version: **3.30.0** – Web-Konsole, Router-WLAN im Betriebsart-Formular; zuvor (3.29.0): Konsole: Echo, `help`, Startseite, Befehle `ap`/`wifi`/`mode`; `Diag:`-Zeile standardmäßig aus.
+Aktuelle Version: **3.31.0** – zweites Board (Waveshare ESP32-S3-ETH, experimentell); zuvor (3.30.0): Web-Konsole, Router-WLAN im Betriebsart-Formular; zuvor (3.29.0): Konsole: Echo, `help`, Startseite, Befehle `ap`/`wifi`/`mode`; `Diag:`-Zeile standardmäßig aus.
 Fertige Firmware-Dateien hängen an jedem [Release](../../releases).
 Alle Änderungen stehen im **[Änderungsprotokoll](CHANGELOG.de.md)**.
 

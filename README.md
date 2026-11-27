@@ -2,13 +2,13 @@
 
 🇬🇧 **English** | 🇩🇪 [Deutsch](README.de.md)
 
-[![Version](https://img.shields.io/badge/Version-3.30.0-1263a6)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-3.31.0-1263a6)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/ESP32-WT32--ETH01-green)](#hardware)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Arduino%20Core%203.x-orange?logo=platformio)](#build-and-flash)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sykh)
 
-**Version 3.30.0** – see the [changelog](CHANGELOG.md)
+**Version 3.31.0** – see the [changelog](CHANGELOG.md)
 
 **WT32-ETH01 NetBridge** is a firmware for the **WT32-ETH01 v1.4** (ESP32 + LAN8720) that connects
 Ethernet and WiFi in both directions:
@@ -97,6 +97,17 @@ All screenshots with descriptions: **[screenshot album](docs/SCREENSHOTS.md)**.
 - **Serial console** with commands: system status with **CPU load per core**, RAM, firmware size, reason
   of the last start (incl. brownout), optional **5 V supply measurement**, task list
 - Settings stored permanently in flash (NVS); no external libraries required
+
+## Supported boards
+
+One firmware, two boards – choose yours when building (`pio run -e <environment>`) or download the matching file from the [releases](https://github.com/sykh0815/WT32-ETH01-NetBridge/releases):
+
+| Board | Ethernet | PlatformIO environment | Release files | Status |
+|---|---|---|---|---|
+| **WT32-ETH01** v1.4 (ESP32) | LAN8720 (RMII), 100 Mbit/s | `wt32-eth01` | `wt32-eth01-…` | tested |
+| **Waveshare ESP32-S3-ETH** (optional PoE) | W5500 (SPI) | `esp32-s3-eth` | `esp32-s3-eth-…` | **new, experimental** – builds; hardware tests pending, throughput expected lower than on the WT32-ETH01 |
+
+On the ESP32-S3-ETH the display, button and voltage-measurement pins differ (see `BOARD_WAVESHARE_S3_ETH` in `src/main.cpp`); the serial console runs over the USB port.
 
 ## Hardware
 
@@ -349,7 +360,7 @@ LICENSE                   MIT license
 
 ## Versions
 
-Current version: **3.30.0** – web console, router WiFi in the mode form; previously (3.29.0): serial console: echo, `help`, start page, `ap`/`wifi`/`mode` commands; `Diag:` line off by default.
+Current version: **3.31.0** – second board (Waveshare ESP32-S3-ETH, experimental); previously (3.30.0): web console, router WiFi in the mode form; previously (3.29.0): serial console: echo, `help`, start page, `ap`/`wifi`/`mode` commands; `Diag:` line off by default.
 Ready-made firmware files are attached to each [release](../../releases).
 All changes are listed in the **[changelog](CHANGELOG.md)**.
 

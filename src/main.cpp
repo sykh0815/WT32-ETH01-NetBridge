@@ -9,6 +9,10 @@
 #include <esp_private/wifi.h>
 #include <esp_eth.h>
 #include <esp_eth_netif_glue.h>
+#if defined(BOARD_WAVESHARE_S3_ETH)
+#include <driver/spi_master.h>
+#include <driver/gpio.h>
+#endif
 #include <dhcpserver/dhcpserver.h>
 #include <freertos/queue.h>
 #include <esp_system.h>
@@ -140,12 +144,28 @@ const char ICON_MQTT[] = "<path d='M4 10a10 10 0 0 1 10 10M4 4.5A15.5 15.5 0 0 1
 const char FW_ICON_DEFAULT[] = "<path d='M4 12h12M12 6l6 6-6 6'/><path d='M20 5v14'/>";
 String pill(const char *cls, const char *text) { return String("<span class='pill ") + cls + "'>" + text + "</span>"; }
 
+// Board-Auswahl: per Build-Flag (siehe platformio.ini). Standard ist der WT32-ETH01.
+#if defined(BOARD_WAVESHARE_S3_ETH)
+// Waveshare ESP32-S3-ETH: Ethernet ueber W5500 (SPI)
+constexpr int W5500_SCLK_PIN = 13;
+constexpr int W5500_MOSI_PIN = 11;
+constexpr int W5500_MISO_PIN = 12;
+constexpr int W5500_CS_PIN = 14;
+constexpr int W5500_INT_PIN = 10;
+constexpr int W5500_RST_PIN = 9;
+constexpr int W5500_SPI_MHZ = 36;
+constexpr char PRODUCT_NAME[] = "ESP32-S3-ETH NetBridge";
+constexpr char BRIDGE_HOSTNAME[] = "esp32-s3-eth-netbridge";
+constexpr char SETUP_AP_SSID[] = "ESP32-S3-ETH-NetBridge-Setup";
+#else
+// WT32-ETH01: Ethernet ueber LAN8720 (RMII)
 constexpr int ETH_PHY_POWER_PIN = 16;
 constexpr int ETH_PHY_ADDRESS = 1;
-constexpr char FIRMWARE_VERSION[] = "3.30.0";
 constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
+#endif
+constexpr char FIRMWARE_VERSION[] = "3.31.0";
 // Fruehere Standardnamen des Einrichtungs-WLANs: gespeichert = nie selbst geaendert -> neuer Standardname
 const char *const OLD_SETUP_AP_SSIDS[] = {"WT32-NetBridge-Setup", "WT32-Bridge-Setup"};
 // Standard-Passwort des Einrichtungs-WLANs. Leer = offenes WLAN beim ersten Start; das Webinterface
@@ -3067,6 +3087,55 @@ void onNetworkEvent(WiFiEvent_t event) {
 // Ethernet
 // ---------------------------------------------------------------------------
 
+#if defined(BOARD_WAVESHARE_S3_ETH)
+bool installEthernetDriver() {
+  // W5500 am SPI-Bus; Interrupt-Leitung und Reset wie auf dem Board verdrahtet
+  spi_bus_config_t bus{};
+  bus.miso_io_num = W5500_MISO_PIN;
+  bus.mosi_io_num = W5500_MOSI_PIN;
+  bus.sclk_io_num = W5500_SCLK_PIN;
+  bus.quadwp_io_num = -1;
+  bus.quadhd_io_num = -1;
+  if (spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) {
+    Serial.println("SPI-Bus fuer den W5500 konnte nicht gestartet werden");
+    return false;
+  }
+  gpio_install_isr_service(0);
+  pinMode(W5500_RST_PIN, OUTPUT);  // Reset-Impuls
+  digitalWrite(W5500_RST_PIN, LOW);
+  delay(10);
+  digitalWrite(W5500_RST_PIN, HIGH);
+  delay(50);
+
+  spi_device_interface_config_t devCfg{};
+  devCfg.mode = 0;
+  devCfg.clock_speed_hz = W5500_SPI_MHZ * 1000 * 1000;
+  devCfg.spics_io_num = W5500_CS_PIN;
+  devCfg.queue_size = 20;
+  eth_w5500_config_t w5500Config = ETH_W5500_DEFAULT_CONFIG(SPI2_HOST, &devCfg);
+  w5500Config.int_gpio_num = W5500_INT_PIN;
+  eth_mac_config_t macConfig = ETH_MAC_DEFAULT_CONFIG();
+  eth_phy_config_t phyConfig = ETH_PHY_DEFAULT_CONFIG();
+  phyConfig.phy_addr = 1;
+  phyConfig.reset_gpio_num = -1;
+  esp_eth_mac_t *mac = esp_eth_mac_new_w5500(&w5500Config, &macConfig);
+  esp_eth_phy_t *phy = esp_eth_phy_new_w5500(&phyConfig);
+  esp_eth_config_t ethConfig = ETH_DEFAULT_CONFIG(mac, phy);
+  ethConfig.check_link_period_ms = 2000;
+
+  if (phy == nullptr || mac == nullptr || esp_eth_driver_install(&ethConfig, &ethernetHandle) != ESP_OK) {
+    Serial.println("W5500-Treiber konnte nicht gestartet werden");
+    return false;
+  }
+  // Der W5500 hat keine eigene MAC-Adresse: die vom ESP32 abgeleitete Ethernet-Adresse setzen
+  uint8_t address[6];
+  esp_read_mac(address, ESP_MAC_ETH);
+  esp_eth_ioctl(ethernetHandle, ETH_CMD_S_MAC_ADDR, address);
+  esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &onEthernetEvent, nullptr);
+  esp_eth_ioctl(ethernetHandle, ETH_CMD_G_MAC_ADDR, ethMac);
+  return true;
+}
+#else
 bool installEthernetDriver() {
   // WT32-ETH01: GPIO16 schaltet den 50-MHz-Oszillator des LAN8720 ein.
   // Der Takt muss laufen, bevor der EMAC initialisiert wird.
@@ -3095,6 +3164,7 @@ bool installEthernetDriver() {
   esp_eth_ioctl(ethernetHandle, ETH_CMD_G_MAC_ADDR, ethMac);
   return true;
 }
+#endif
 
 void startNatLan() {
   esp_netif_ip_info_t ipInfo{};
@@ -3189,12 +3259,22 @@ void startBridgeLan() {
 // Nach 1 Minute ohne Ereignis wird abgedunkelt (TFT ohne Licht-Steuerung: dunklere Farben).
 // ---------------------------------------------------------------------------
 
+#if defined(BOARD_WAVESHARE_S3_ETH)
+// Freie Pins am ESP32-S3-ETH (IO9-IO14 gehoeren dem W5500). Vor dem Anschliessen an der Stiftleiste pruefen.
+constexpr int DISP_PIN_A = 1;
+constexpr int DISP_PIN_B = 2;
+constexpr int TFT_DC_PIN = 38;
+constexpr int TFT_CS_PIN = 39;
+constexpr int TFT_RST_PIN = 40;
+constexpr int TFT_BL_PIN = 41;
+#else
 constexpr int DISP_PIN_A = 32;   // OLED: SCL, TFT: SCK ("SCL" auf dem Modul)
 constexpr int DISP_PIN_B = 33;   // OLED: SDA, TFT: MOSI ("SDA" auf dem Modul)
 constexpr int TFT_DC_PIN = 4;
 constexpr int TFT_CS_PIN = 14;
 constexpr int TFT_RST_PIN = 5;
 constexpr int TFT_BL_PIN = 17;  // optional: Hintergrundbeleuchtung per PWM ("TXD")
+#endif
 constexpr uint32_t DISPLAY_BRIGHT_MS = 60000;
 constexpr int DISPLAY_HISTORY = 100;  // Verlauf der Datenrate (Sekunden)
 
@@ -3549,7 +3629,11 @@ void displayDrawNotify() {
 // Uhrzeit (NTP), Nachtmodus, Taster, Tagesstatistik, WLAN-QR-Code
 // ---------------------------------------------------------------------------
 
+#if defined(BOARD_WAVESHARE_S3_ETH)
+constexpr int BUTTON_PIN = 42;  // Taster gegen GND, Pull-up nach 3V3
+#else
 constexpr int BUTTON_PIN = 36;  // Taster gegen GND, 10 kOhm Pull-up nach 3V3 (IO36 hat keinen internen)
+#endif
 const char *const TZ_NAMES[] = {"Europa/Berlin (MEZ/MESZ)", "Europa/London (GMT/BST)", "UTC", "USA Ost (EST/EDT)"};
 const char *const TZ_RULES[] = {"CET-1CEST,M3.5.0,M10.5.0/3", "GMT0BST,M3.5.0/1,M10.5.0", "UTC0", "EST5EDT,M3.2.0,M11.1.0"};
 constexpr int TZ_COUNT = 4;
@@ -4270,7 +4354,11 @@ void sendDisplayFrame() {
 // Befehle im seriellen Monitor: status (s), tasks (t), vmon on|off|cal <Volt>, reboot, help (?)
 // ---------------------------------------------------------------------------
 
+#if defined(BOARD_WAVESHARE_S3_ETH)
+constexpr int VMON_PIN = 3;            // optionaler Spannungsteiler 5V -> IO3 (ADC1, z. B. 2 x 10 kOhm)
+#else
 constexpr int VMON_PIN = 39;           // optionaler Spannungsteiler 5V -> IO39 (z. B. 2 x 10 kOhm)
+#endif
 bool vmonEnabled = false;
 float vmonRatio = 2.0f;                // Teilerverhaeltnis (mit "vmon cal" justierbar)
 float cpuLoad[2] = {-1, -1};           // Prozent je Kern, -1 = noch unbekannt
