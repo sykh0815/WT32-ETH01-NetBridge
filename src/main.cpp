@@ -165,7 +165,7 @@ constexpr char PRODUCT_NAME[] = "WT32-ETH01 NetBridge";
 constexpr char BRIDGE_HOSTNAME[] = "wt32-eth01-netbridge";  // Name im Router (z. B. http://wt32-eth01-netbridge.fritz.box)
 constexpr char SETUP_AP_SSID[] = "WT32-ETH01-NetBridge-Setup";
 #endif
-constexpr char FIRMWARE_VERSION[] = "3.31.0";
+constexpr char FIRMWARE_VERSION[] = "3.31.1";
 // Fruehere Standardnamen des Einrichtungs-WLANs: gespeichert = nie selbst geaendert -> neuer Standardname
 const char *const OLD_SETUP_AP_SSIDS[] = {"WT32-NetBridge-Setup", "WT32-Bridge-Setup"};
 // Standard-Passwort des Einrichtungs-WLANs. Leer = offenes WLAN beim ersten Start; das Webinterface
@@ -4555,9 +4555,9 @@ void printSystemStatus() {
   con.println(" Versorgung");
   const float volts = supplyVoltage();
   if (volts < 0) {
-    printRow("5V-Eingang", "nicht gemessen (optional: Spannungsteiler an IO39, Befehl 'vmon on')");
+    printRow("5V-Eingang", String("nicht gemessen (optional: Spannungsteiler an IO") + VMON_PIN + ", Befehl 'vmon on')");
   } else if (volts == 0) {
-    printRow("5V-Eingang", "keine Spannung an IO39 - Spannungsteiler angeschlossen?");
+    printRow("5V-Eingang", String("keine Spannung an IO") + VMON_PIN + " - Spannungsteiler angeschlossen?");
   } else {
     snprintf(text, sizeof(text), "%.2f V %s", volts, volts < 4.6f ? "  ZU NIEDRIG!" : volts > 5.4f ? "  zu hoch" : "  ok");
     printRow("5V-Eingang", text);
@@ -4612,7 +4612,7 @@ void printConsoleHelp() {
   con.println("   ap <name> <passwort>     WLAN der Bridge setzen (Passwort 8-63 Zeichen, ohne Leerzeichen)");
   con.println("   ap open                  WLAN der Bridge bewusst offen lassen | 'ap' zeigt den Stand");
   con.println("   wifi <name> <passwort>   Router-WLAN setzen und verbinden | 'wifi' zeigt den Stand");
-  con.println("   vmon on|off|cal <Volt>   Spannungsmessung an IO39");
+  con.printf("   vmon on|off|cal <Volt>   Spannungsmessung an IO%d\n", VMON_PIN);
   con.println("   diag on|off|<Sekunden>   Statuszeile (standardmaessig aus)");
   con.println("   reboot                   Neustart");
 }
@@ -4644,7 +4644,7 @@ void runConsoleCommand(String line) {
   } else if (line == "vmon on" || line == "vmon off") {
     vmonEnabled = line == "vmon on";
     preferences.putBool("vmon_on", vmonEnabled);
-    con.printf("Spannungsmessung an IO39 %s\n", vmonEnabled ? "eingeschaltet (Teiler 5V -> IO39, z. B. 2 x 10 kOhm)" : "ausgeschaltet");
+    con.printf("Spannungsmessung an IO%d %s\n", VMON_PIN, vmonEnabled ? "eingeschaltet (Teiler 5V -> Pin, z. B. 2 x 10 kOhm)" : "ausgeschaltet");
   } else if (line.startsWith("vmon cal ")) {
     const float actual = atof(line.substring(9).c_str());
     const bool wasOn = vmonEnabled;

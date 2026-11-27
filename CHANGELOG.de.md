@@ -14,6 +14,12 @@ Die Versionsnummern folgen dem Schema **MAJOR.MINOR.PATCH**:
 Die aktuelle Version steht in `src/main.cpp` (`FIRMWARE_VERSION`) und wird im Webinterface und in
 der seriellen Ausgabe angezeigt.
 
+## [3.31.1] – 27.11.2026
+
+### Behoben
+- **Konsole: Pin der Spannungsmessung.** Die Konsolentexte zeigen jetzt den tatsächlich verwendeten Pin (IO39 beim WT32-ETH01, IO3 beim ESP32-S3-ETH).
+- **ESP32-S3-ETH getestet.** Erster Test auf dem Board: W5500-Verbindung (100 Mbit/s), WLAN-Access-Point und Webinterface laufen.
+
 ## [3.31.0] – 27.11.2026
 
 ### Hinzugefügt
